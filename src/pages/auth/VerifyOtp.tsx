@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/hooks/useAuth';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { ArrowRight } from "lucide-react";
 
 const VerifyOtpPage = () => {
   const [otp, setOtp] = useState('');
@@ -48,8 +48,16 @@ const VerifyOtpPage = () => {
     try {
       if (isPhoneAuth) {
         await verifyOtp(contactInfo, otp);
+        toast({
+          title: "Success",
+          description: "Phone number verified successfully"
+        });
       } else if (isEmailAuth) {
         await verifyOtp({ email: contactInfo, token: otp, type: 'email' });
+        toast({
+          title: "Success",
+          description: "Email verified successfully"
+        });
       }
     } catch (error) {
       toast({
@@ -60,8 +68,18 @@ const VerifyOtpPage = () => {
     }
   };
 
+  const handleSkipAuth = () => {
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
+      <div className="absolute top-4 right-4">
+        <Button variant="ghost" onClick={handleSkipAuth}>
+          Skip <ArrowRight className="ml-1 h-4 w-4" />
+        </Button>
+      </div>
+      
       <div className="max-w-md w-full mx-auto">
         <h1 className="text-2xl font-bold mb-6 text-center">Verify OTP</h1>
         <p className="text-center mb-6 text-gray-600">

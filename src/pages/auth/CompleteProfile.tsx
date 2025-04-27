@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import { ArrowRight } from "lucide-react";
 
 const CompleteProfilePage = () => {
   const [fullName, setFullName] = useState('');
@@ -38,8 +39,18 @@ const CompleteProfilePage = () => {
     }
   };
 
+  const handleSkipAuth = () => {
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
+      <div className="absolute top-4 right-4">
+        <Button variant="ghost" onClick={handleSkipAuth}>
+          Skip <ArrowRight className="ml-1 h-4 w-4" />
+        </Button>
+      </div>
+      
       <div className="max-w-md w-full mx-auto">
         <h1 className="text-2xl font-bold mb-6 text-center">Complete Your Profile</h1>
         <form onSubmit={handleCompleteProfile} className="space-y-4">

@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Mail, Phone } from "lucide-react";
+import { Mail, Phone, ArrowRight } from "lucide-react";
 
 const LoginPage = () => {
   const [phone, setPhone] = useState('');
@@ -20,6 +20,10 @@ const LoginPage = () => {
     e.preventDefault();
     try {
       await signInWithOtp(phone);
+      toast({
+        title: "OTP Sent",
+        description: "Please check your phone for the verification code",
+      });
       // Navigate to the verify OTP page with the phone number in the URL
       navigate(`/auth/verify-otp?phone=${encodeURIComponent(phone)}`);
     } catch (error) {
@@ -50,8 +54,18 @@ const LoginPage = () => {
     }
   };
 
+  const handleSkipAuth = () => {
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
+      <div className="absolute top-4 right-4">
+        <Button variant="ghost" onClick={handleSkipAuth}>
+          Skip <ArrowRight className="ml-1 h-4 w-4" />
+        </Button>
+      </div>
+      
       <div className="max-w-md w-full mx-auto">
         <h1 className="text-2xl font-bold mb-6 text-center">Login</h1>
         

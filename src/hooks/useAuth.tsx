@@ -15,11 +15,6 @@ export const useAuth = () => {
       const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
       setLoading(false);
-
-      // If no user, redirect to login
-      if (!session?.user) {
-        navigate('/auth/login');
-      }
     };
 
     checkSession();
@@ -27,17 +22,12 @@ export const useAuth = () => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
-      
-      // If logged out, redirect to login
-      if (event === 'SIGNED_OUT') {
-        navigate('/auth/login');
-      }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, []);
 
   // Function to sign in with OTP via phone or email
   const signInWithOtp = async (phoneOrEmail: string | { email: string }) => {
@@ -46,8 +36,10 @@ export const useAuth = () => {
       let response;
       
       if (typeof phoneOrEmail === 'string') {
-        // Handle phone OTP
+        // Format phone number to E.164 format (required by Supabase)
+        // Ensure it starts with a plus sign
         const formattedPhone = phoneOrEmail.startsWith('+') ? phoneOrEmail : `+${phoneOrEmail}`;
+        
         response = await supabase.auth.signInWithOtp({
           phone: formattedPhone,
         });
@@ -80,8 +72,9 @@ export const useAuth = () => {
       let response;
       
       if (typeof phoneOrEmail === 'string' && token) {
-        // Handle phone verification
+        // Format phone number to E.164 format
         const formattedPhone = phoneOrEmail.startsWith('+') ? phoneOrEmail : `+${phoneOrEmail}`;
+        
         response = await supabase.auth.verifyOtp({
           phone: formattedPhone,
           token,
@@ -103,7 +96,7 @@ export const useAuth = () => {
       }
 
       // Navigate to profile completion if new user
-      if (response.data.session?.user) {
+      if (response.data.user) {
         navigate('/auth/complete-profile');
       }
       
@@ -132,6 +125,7 @@ export const useAuth = () => {
 
   const logout = async () => {
     await supabase.auth.signOut();
+    navigate('/auth/login');
   };
 
   return {
