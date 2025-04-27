@@ -14,40 +14,42 @@ import Education from "./pages/Education";
 import FrontlineDashboard from "./pages/FrontlineDashboard";
 import NotFound from "./pages/NotFound";
 
-// New Auth Pages
+// Auth Pages
 import LoginPage from "./pages/auth/Login";
 import VerifyOtpPage from "./pages/auth/VerifyOtp";
 import CompleteProfilePage from "./pages/auth/CompleteProfile";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
+const App = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Routes>
-          {/* Authentication Routes */}
-          <Route path="/auth/login" element={<LoginPage />} />
-          <Route path="/auth/verify-otp" element={<VerifyOtpPage />} />
-          <Route path="/auth/complete-profile" element={<CompleteProfilePage />} />
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <Routes>
+            {/* Authentication Routes */}
+            <Route path="/auth/login" element={<LoginPage />} />
+            <Route path="/auth/verify-otp" element={<VerifyOtpPage />} />
+            <Route path="/auth/complete-profile" element={<CompleteProfilePage />} />
 
-          {/* Existing Routes */}
-          <Route path="/" element={<Index />} />
-          <Route path="/sos-alert" element={<SOSAlert />} />
-          <Route path="/nearest-clinic" element={<NearestClinic />} />
-          <Route path="/connect-cfrs" element={<ConnectCFRs />} />
-          <Route path="/triage" element={<Triage />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/education" element={<Education />} />
-          <Route path="/frontline-dashboard" element={<FrontlineDashboard />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+            {/* Existing Routes */}
+            <Route path="/" element={<Index />} />
+            <Route path="/sos-alert" element={<SOSAlert />} />
+            <Route path="/nearest-clinic" element={<NearestClinic />} />
+            <Route path="/connect-cfrs" element={<ConnectCFRs />} />
+            <Route path="/triage" element={<Triage />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/education" element={<Education />} />
+            <Route path="/frontline-dashboard" element={<FrontlineDashboard />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </TooltipProvider>
       </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+    </QueryClientProvider>
+  );
+};
 
 export default App;
