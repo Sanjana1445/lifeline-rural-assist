@@ -1,9 +1,9 @@
-
 import { useState, useEffect } from "react";
 import { ArrowLeft, CheckCircle, CircleX, PhoneCall } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
+import { useToast } from "@/hooks/use-toast";
 
 interface Responder {
   id: string;
@@ -17,8 +17,9 @@ interface Responder {
 const SOSAlert = () => {
   const [responders, setResponders] = useState<Responder[]>([]);
   const [alertSent, setAlertSent] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
-  // Simulate sending an alert and receiving responders
   useEffect(() => {
     const simulateAlert = setTimeout(() => {
       setAlertSent(true);
@@ -58,7 +59,6 @@ const SOSAlert = () => {
       ]);
     }, 2000);
 
-    // Simulate some responders accepting the alert
     const simulateResponses = setTimeout(() => {
       setResponders((prev) =>
         prev.map((responder) => {
@@ -76,10 +76,18 @@ const SOSAlert = () => {
     };
   }, []);
 
+  const handleCancelEmergency = () => {
+    toast({
+      title: "Emergency Cancelled",
+      description: "Your emergency request has been cancelled.",
+    });
+    navigate('/');
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 relative pb-24">
       <Header />
-      <div className="p-4 pb-20">
+      <div className="p-4 pb-32">
         <div className="flex items-center mb-4">
           <Link to="/" className="mr-2">
             <ArrowLeft />
@@ -156,6 +164,14 @@ const SOSAlert = () => {
             ))
           )}
         </div>
+      </div>
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t">
+        <button
+          onClick={handleCancelEmergency}
+          className="w-full bg-red-500 text-white py-4 rounded-lg font-medium hover:bg-red-600 transition-colors"
+        >
+          Cancel Emergency
+        </button>
       </div>
       <BottomNavBar />
     </div>
