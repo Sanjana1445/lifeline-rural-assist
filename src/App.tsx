@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,6 +14,11 @@ import Education from "./pages/Education";
 import FrontlineDashboard from "./pages/FrontlineDashboard";
 import NotFound from "./pages/NotFound";
 
+// New Auth Pages
+import LoginPage from "./pages/auth/Login";
+import VerifyOtpPage from "./pages/auth/VerifyOtp";
+import CompleteProfilePage from "./pages/auth/CompleteProfile";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -24,6 +28,12 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
+          {/* Authentication Routes */}
+          <Route path="/auth/login" element={<LoginPage />} />
+          <Route path="/auth/verify-otp" element={<VerifyOtpPage />} />
+          <Route path="/auth/complete-profile" element={<CompleteProfilePage />} />
+
+          {/* Existing Routes */}
           <Route path="/" element={<Index />} />
           <Route path="/sos-alert" element={<SOSAlert />} />
           <Route path="/nearest-clinic" element={<NearestClinic />} />
