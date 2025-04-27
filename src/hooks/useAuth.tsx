@@ -39,40 +39,80 @@ export const useAuth = () => {
     };
   }, [navigate]);
 
-  const signInWithOtp = async (phone: string) => {
+  // Function to sign in with OTP via phone or email
+  const signInWithOtp = async (phoneOrEmail: string | { email: string }) => {
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithOtp({
-      phone: phone.startsWith('+') ? phone : `+91${phone}`,
-    });
-
-    if (error) {
-      setLoading(false);
+    try {
+      let response;
+      
+      if (typeof phoneOrEmail === 'string') {
+        // Handle phone OTP
+        const formattedPhone = phoneOrEmail.startsWith('+') ? phoneOrEmail : `+${phoneOrEmail}`;
+        response = await supabase.auth.signInWithOtp({
+          phone: formattedPhone,
+        });
+      } else {
+        // Handle email OTP
+        response = await supabase.auth.signInWithOtp({
+          email: phoneOrEmail.email,
+        });
+      }
+      
+      if (response.error) {
+        throw response.error;
+      }
+      
+      return response.data;
+    } catch (error) {
       throw error;
+    } finally {
+      setLoading(false);
     }
-
-    return data;
   };
 
-  const verifyOtp = async (phone: string, token: string) => {
+  // Function to verify OTP for both phone and email
+  const verifyOtp = async (
+    phoneOrEmail: string | { email: string, token: string, type: 'email' }, 
+    token?: string
+  ) => {
     setLoading(true);
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: phone.startsWith('+') ? phone : `+91${phone}`,
-      token,
-      type: 'sms'
-    });
+    try {
+      let response;
+      
+      if (typeof phoneOrEmail === 'string' && token) {
+        // Handle phone verification
+        const formattedPhone = phoneOrEmail.startsWith('+') ? phoneOrEmail : `+${phoneOrEmail}`;
+        response = await supabase.auth.verifyOtp({
+          phone: formattedPhone,
+          token,
+          type: 'sms'
+        });
+      } else if (typeof phoneOrEmail === 'object') {
+        // Handle email verification
+        response = await supabase.auth.verifyOtp({
+          email: phoneOrEmail.email,
+          token: phoneOrEmail.token,
+          type: phoneOrEmail.type
+        });
+      } else {
+        throw new Error('Invalid verification parameters');
+      }
+      
+      if (response.error) {
+        throw response.error;
+      }
 
-    if (error) {
-      setLoading(false);
+      // Navigate to profile completion if new user
+      if (response.data.session?.user) {
+        navigate('/auth/complete-profile');
+      }
+      
+      return response.data;
+    } catch (error) {
       throw error;
+    } finally {
+      setLoading(false);
     }
-
-    // Navigate to profile completion if new user
-    if (data.session?.user) {
-      navigate('/auth/complete-profile');
-    }
-
-    setLoading(false);
-    return data;
   };
 
   const updateProfile = async (profileData: {
