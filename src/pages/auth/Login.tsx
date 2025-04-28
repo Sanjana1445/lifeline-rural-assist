@@ -2,55 +2,65 @@
 import React, { useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Label } from "@/components/ui/label";
 import { Mail, Phone, ArrowRight } from "lucide-react";
 
 const LoginPage = () => {
-  const [phone, setPhone] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
   const { signInWithOtp } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const handleSendPhoneOtp = async (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await signInWithOtp(phone);
-      toast({
-        title: "OTP Sent",
-        description: "Please check your phone for the verification code",
-      });
-      // Navigate to the verify OTP page with the phone number in the URL
-      navigate(`/auth/verify-otp?phone=${encodeURIComponent(phone)}`);
-    } catch (error) {
-      toast({
-        title: "Error Sending OTP",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
-        variant: "destructive"
-      });
-    }
-  };
+    setIsLoading(true);
 
-  const handleSendEmailOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
     try {
-      await signInWithOtp({ email });
-      toast({
-        title: "OTP Sent",
-        description: "Please check your email for the verification code",
-      });
-      // Navigate to verify OTP page with email parameter
-      navigate(`/auth/verify-otp?email=${encodeURIComponent(email)}`);
+      if (authMethod === 'phone') {
+        // Format phone number to E.164 format if necessary
+        const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+        await signInWithOtp(formattedPhone);
+        
+        // Store the phone number for the verification page
+        sessionStorage.setItem('auth_identifier', formattedPhone);
+        sessionStorage.setItem('auth_method', 'phone');
+        
+        toast({
+          title: "OTP Sent",
+          description: `A verification code has been sent to ${formattedPhone}`
+        });
+        
+        // Redirect to verification page
+        navigate('/auth/verify-otp');
+      } else {
+        await signInWithOtp({ email });
+        
+        // Store the email for the verification page
+        sessionStorage.setItem('auth_identifier', email);
+        sessionStorage.setItem('auth_method', 'email');
+        
+        toast({
+          title: "OTP Sent",
+          description: `A verification code has been sent to ${email}`
+        });
+        
+        // Redirect to verification page
+        navigate('/auth/verify-otp');
+      }
     } catch (error) {
       toast({
-        title: "Error Sending OTP",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to send verification code",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -67,9 +77,9 @@ const LoginPage = () => {
       </div>
       
       <div className="max-w-md w-full mx-auto">
-        <h1 className="text-2xl font-bold mb-6 text-center">Login</h1>
+        <h1 className="text-2xl font-bold mb-6 text-center text-eresq-navy">Sign In / Register</h1>
         
-        <Tabs defaultValue="phone" className="w-full">
+        <Tabs defaultValue="phone" className="w-full" onValueChange={(value) => setAuthMethod(value as 'phone' | 'email')}>
           <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="phone">
               <Phone className="mr-2 h-4 w-4" />
@@ -81,38 +91,37 @@ const LoginPage = () => {
             </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="phone">
-            <form onSubmit={handleSendPhoneOtp} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
+          <TabsContent value="phone" className="mt-0">
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div>
                 <Input 
-                  id="phone"
                   type="tel" 
-                  placeholder="Enter your phone number" 
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  required 
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="Enter your phone number (with country code)" 
+                  required
                 />
-                <p className="text-xs text-gray-500">Format: +91XXXXXXXXXX or 91XXXXXXXXXX</p>
               </div>
-              <Button type="submit" className="w-full">Send OTP</Button>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Sending..." : "Send OTP"}
+              </Button>
             </form>
           </TabsContent>
           
-          <TabsContent value="email">
-            <form onSubmit={handleSendEmailOtp} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+          <TabsContent value="email" className="mt-0">
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div>
                 <Input 
-                  id="email"
                   type="email" 
-                  placeholder="Enter your email address" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required 
+                  placeholder="Enter your email address" 
+                  required
                 />
               </div>
-              <Button type="submit" className="w-full">Send OTP</Button>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Sending..." : "Send OTP"}
+              </Button>
             </form>
           </TabsContent>
         </Tabs>

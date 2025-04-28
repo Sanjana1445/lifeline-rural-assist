@@ -9,30 +9,95 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      frontline_types: {
+        Row: {
+          description: string | null
+          id: number
+          name: string
+        }
+        Insert: {
+          description?: string | null
+          id?: number
+          name: string
+        }
+        Update: {
+          description?: string | null
+          id?: number
+          name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           address: string | null
+          certification_details: Json | null
           email: string | null
+          frontline_type: number | null
           full_name: string | null
           id: string
+          is_frontline_worker: boolean | null
           phone: string
           updated_at: string | null
         }
         Insert: {
           address?: string | null
+          certification_details?: Json | null
           email?: string | null
+          frontline_type?: number | null
           full_name?: string | null
           id: string
+          is_frontline_worker?: boolean | null
           phone: string
           updated_at?: string | null
         }
         Update: {
           address?: string | null
+          certification_details?: Json | null
           email?: string | null
+          frontline_type?: number | null
           full_name?: string | null
           id?: string
+          is_frontline_worker?: boolean | null
           phone?: string
           updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_frontline_type_fkey"
+            columns: ["frontline_type"]
+            isOneToOne: false
+            referencedRelation: "frontline_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      videos: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          section: string
+          thumbnail: string | null
+          title: string
+          url: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          section: string
+          thumbnail?: string | null
+          title: string
+          url: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          section?: string
+          thumbnail?: string | null
+          title?: string
+          url?: string
         }
         Relationships: []
       }

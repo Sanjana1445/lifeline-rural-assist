@@ -52,7 +52,7 @@ const CompleteProfilePage = () => {
       </div>
       
       <div className="max-w-md w-full mx-auto">
-        <h1 className="text-2xl font-bold mb-6 text-center">Complete Your Profile</h1>
+        <h1 className="text-2xl font-bold mb-6 text-center text-eresq-navy">Complete Your Profile</h1>
         <form onSubmit={handleCompleteProfile} className="space-y-4">
           <Input 
             type="text" 

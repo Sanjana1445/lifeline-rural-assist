@@ -1,3 +1,4 @@
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +13,7 @@ import Profile from "./pages/Profile";
 import History from "./pages/History";
 import Education from "./pages/Education";
 import FrontlineDashboard from "./pages/FrontlineDashboard";
+import FrontlineRegistration from "./pages/FrontlineRegistration";
 import NotFound from "./pages/NotFound";
 
 // Auth Pages
@@ -44,6 +46,7 @@ const App = () => {
             <Route path="/history" element={<History />} />
             <Route path="/education" element={<Education />} />
             <Route path="/frontline-dashboard" element={<FrontlineDashboard />} />
+            <Route path="/frontline-registration" element={<FrontlineRegistration />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </TooltipProvider>

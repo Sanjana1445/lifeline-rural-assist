@@ -1,76 +1,87 @@
 
 import React, { useState, useEffect } from 'react';
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/hooks/useAuth';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from "lucide-react";
 
 const VerifyOtpPage = () => {
   const [otp, setOtp] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
+  const [isLoading, setIsLoading] = useState(false);
   const { verifyOtp } = useAuth();
   const { toast } = useToast();
-  const location = useLocation();
   const navigate = useNavigate();
 
-  const phone = new URLSearchParams(location.search).get('phone');
-  const email = new URLSearchParams(location.search).get('email');
-
-  // Determine which authentication method we're using
-  const isPhoneAuth = !!phone;
-  const isEmailAuth = !!email;
-  const contactInfo = phone || email || '';
-
   useEffect(() => {
-    // If neither phone nor email is provided, redirect to login
-    if (!isPhoneAuth && !isEmailAuth) {
+    // Retrieve stored identifier and auth method
+    const storedIdentifier = sessionStorage.getItem('auth_identifier');
+    const storedAuthMethod = sessionStorage.getItem('auth_method') as 'phone' | 'email';
+    
+    if (!storedIdentifier) {
+      // If no identifier is found, redirect to login page
       toast({
         title: "Error",
-        description: "Missing contact information",
+        description: "No verification in progress. Please sign in again.",
         variant: "destructive"
       });
       navigate('/auth/login');
+      return;
     }
-  }, [isPhoneAuth, isEmailAuth, navigate, toast]);
+    
+    setIdentifier(storedIdentifier);
+    if (storedAuthMethod) {
+      setAuthMethod(storedAuthMethod);
+    }
+  }, [navigate, toast]);
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contactInfo) {
-      toast({
-        title: "Error",
-        description: "Contact information is missing",
-        variant: "destructive"
-      });
-      return;
-    }
+    setIsLoading(true);
 
     try {
-      if (isPhoneAuth) {
-        await verifyOtp(contactInfo, otp);
-        toast({
-          title: "Success",
-          description: "Phone number verified successfully"
-        });
-      } else if (isEmailAuth) {
-        await verifyOtp({ email: contactInfo, token: otp, type: 'email' });
-        toast({
-          title: "Success",
-          description: "Email verified successfully"
+      if (authMethod === 'phone') {
+        await verifyOtp(identifier, otp);
+      } else {
+        await verifyOtp({ 
+          email: identifier, 
+          token: otp,
+          type: 'email'
         });
       }
+      
+      // Clear stored values
+      sessionStorage.removeItem('auth_identifier');
+      sessionStorage.removeItem('auth_method');
+      
+      toast({
+        title: "Success",
+        description: "Verification successful!"
+      });
+      
+      // Redirect to profile completion
+      navigate('/auth/complete-profile');
     } catch (error) {
       toast({
-        title: "Invalid OTP",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to verify code",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSkipAuth = () => {
     navigate('/');
   };
+
+  const maskedIdentifier = authMethod === 'phone' 
+    ? `${identifier.slice(0, 3)}****${identifier.slice(-3)}` 
+    : `${identifier.slice(0, 2)}***@${identifier.split('@')[1]}`;
 
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
@@ -81,35 +92,32 @@ const VerifyOtpPage = () => {
       </div>
       
       <div className="max-w-md w-full mx-auto">
-        <h1 className="text-2xl font-bold mb-6 text-center">Verify OTP</h1>
-        <p className="text-center mb-6 text-gray-600">
-          We've sent an OTP to {isPhoneAuth ? 'phone' : 'email'}: <strong>{contactInfo}</strong>
+        <h1 className="text-2xl font-bold mb-2 text-center text-eresq-navy">Verify OTP</h1>
+        <p className="text-center text-gray-600 mb-6">
+          Enter the verification code sent to {maskedIdentifier}
         </p>
         
-        <form onSubmit={handleVerifyOtp} className="space-y-6">
-          <div className="space-y-2">
-            <div className="flex justify-center">
-              <InputOTP maxLength={6} value={otp} onChange={setOtp}>
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
+        <form onSubmit={handleVerifyOtp} className="space-y-4">
+          <div>
+            <Input 
+              type="text" 
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              placeholder="Enter verification code" 
+              required 
+            />
           </div>
-          <Button type="submit" className="w-full">Verify</Button>
-          
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? "Verifying..." : "Verify OTP"}
+          </Button>
           <div className="text-center">
             <Button 
               type="button" 
-              variant="link" 
+              variant="ghost" 
+              className="text-sm text-gray-600"
               onClick={() => navigate('/auth/login')}
             >
-              Back to Login
+              Back to Sign In
             </Button>
           </div>
         </form>
