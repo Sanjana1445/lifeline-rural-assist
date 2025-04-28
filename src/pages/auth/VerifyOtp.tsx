@@ -3,20 +3,26 @@ import React, { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
 const VerifyOtpPage = () => {
   const [otp, setOtp] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
   const [isLoading, setIsLoading] = useState(false);
-  const { verifyOtp } = useAuth();
+  const { verifyOtp, user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Redirect if already authenticated
+    if (user) {
+      navigate('/');
+      return;
+    }
+
     // Retrieve stored identifier and auth method
     const storedIdentifier = sessionStorage.getItem('auth_identifier');
     const storedAuthMethod = sessionStorage.getItem('auth_method') as 'phone' | 'email';
@@ -36,10 +42,19 @@ const VerifyOtpPage = () => {
     if (storedAuthMethod) {
       setAuthMethod(storedAuthMethod);
     }
-  }, [navigate, toast]);
+  }, [navigate, toast, user]);
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!otp) {
+      toast({
+        title: "Error",
+        description: "Please enter the verification code",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -61,9 +76,6 @@ const VerifyOtpPage = () => {
         title: "Success",
         description: "Verification successful!"
       });
-      
-      // Redirect to profile completion
-      navigate('/auth/complete-profile');
     } catch (error) {
       toast({
         title: "Error",
@@ -75,22 +87,14 @@ const VerifyOtpPage = () => {
     }
   };
 
-  const handleSkipAuth = () => {
-    navigate('/');
-  };
-
   const maskedIdentifier = authMethod === 'phone' 
     ? `${identifier.slice(0, 3)}****${identifier.slice(-3)}` 
-    : `${identifier.slice(0, 2)}***@${identifier.split('@')[1]}`;
+    : identifier.includes('@') 
+      ? `${identifier.slice(0, 2)}***@${identifier.split('@')[1]}` 
+      : identifier;
 
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
-      <div className="absolute top-4 right-4">
-        <Button variant="ghost" onClick={handleSkipAuth}>
-          Skip <ArrowRight className="ml-1 h-4 w-4" />
-        </Button>
-      </div>
-      
       <div className="max-w-md w-full mx-auto">
         <h1 className="text-2xl font-bold mb-2 text-center text-eresq-navy">Verify OTP</h1>
         <p className="text-center text-gray-600 mb-6">
@@ -104,19 +108,24 @@ const VerifyOtpPage = () => {
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               placeholder="Enter verification code" 
-              required 
             />
           </div>
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Verifying..." : "Verify OTP"}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Verifying...
+              </>
+            ) : "Verify OTP"}
           </Button>
           <div className="text-center">
             <Button 
               type="button" 
               variant="ghost" 
-              className="text-sm text-gray-600"
+              className="text-sm text-gray-600 flex items-center justify-center"
               onClick={() => navigate('/auth/login')}
             >
+              <ArrowLeft className="mr-1 h-4 w-4" />
               Back to Sign In
             </Button>
           </div>

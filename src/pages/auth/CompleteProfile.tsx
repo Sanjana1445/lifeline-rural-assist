@@ -1,22 +1,32 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 const CompleteProfilePage = () => {
   const [fullName, setFullName] = useState('');
   const [address, setAddress] = useState('');
   const [email, setEmail] = useState('');
-  const { updateProfile } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const { user, updateProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    // If user is not authenticated, redirect to login
+    if (!user) {
+      navigate('/auth/login');
+    }
+  }, [user, navigate]);
+
   const handleCompleteProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
+
     try {
       await updateProfile({
         full_name: fullName,
@@ -36,45 +46,63 @@ const CompleteProfilePage = () => {
         description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  const handleSkipAuth = () => {
-    navigate('/');
   };
 
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
-      <div className="absolute top-4 right-4">
-        <Button variant="ghost" onClick={handleSkipAuth}>
-          Skip <ArrowRight className="ml-1 h-4 w-4" />
-        </Button>
-      </div>
-      
       <div className="max-w-md w-full mx-auto">
-        <h1 className="text-2xl font-bold mb-6 text-center text-eresq-navy">Complete Your Profile</h1>
+        <h1 className="text-2xl font-bold mb-2 text-center text-eresq-navy">Complete Your Profile</h1>
+        <p className="text-center text-gray-600 mb-6">
+          Please provide some additional information to set up your account
+        </p>
+        
         <form onSubmit={handleCompleteProfile} className="space-y-4">
-          <Input 
-            type="text" 
-            placeholder="Full Name" 
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required 
-          />
-          <Input 
-            type="text" 
-            placeholder="Address" 
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            required 
-          />
-          <Input 
-            type="email" 
-            placeholder="Email (Optional)" 
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Button type="submit" className="w-full">Save Profile</Button>
+          <div>
+            <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+            <Input 
+              id="fullName"
+              type="text" 
+              placeholder="Full Name" 
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required 
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+            <Input 
+              id="address"
+              type="text" 
+              placeholder="Address" 
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              required 
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>
+            <Input 
+              id="email"
+              type="email" 
+              placeholder="Email (Optional)" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : "Save Profile"}
+          </Button>
         </form>
       </div>
     </div>
