@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -17,63 +18,52 @@ serve(async (req) => {
     if (!audioData) {
       throw new Error("No audio data provided");
     }
-
-    // Call Gemini API for speech-to-text
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${Deno.env.get("GEMINI_API_KEY")}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    
+    // Extract the base64-encoded audio data (remove the data URL prefix)
+    const base64Audio = audioData.split(',')[1] || audioData;
+    
+    // Call Google Speech-to-Text API
+    const response = await fetch("https://speech.googleapis.com/v1p1beta1/speech:recognize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get("GOOGLE_API_TOKEN")}`,
+      },
+      body: JSON.stringify({
+        config: {
+          encoding: "WEBM_OPUS",
+          sampleRateHertz: 48000,
+          languageCode: "en-US",
+          alternativeLanguageCodes: ["hi-IN", "te-IN", "ta-IN", "kn-IN", "mr-IN"],
+          model: "default",
+          enableAutomaticPunctuation: true,
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: "Transcribe this audio and detect what language it is in. Return result in JSON format with fields: 'transcript' and 'language'."
-                },
-                {
-                  inline_data: {
-                    mime_type: "audio/webm",
-                    data: audioData.split(",")[1]
-                  }
-                }
-              ]
-            }
-          ]
-        }),
-      }
-    );
-
+        audio: {
+          content: base64Audio,
+        },
+      }),
+    });
+    
     const data = await response.json();
     
     if (data.error) {
-      throw new Error(data.error.message || "Error in speech recognition");
+      throw new Error(data.error.message || "Speech recognition failed");
     }
-
-    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     
-    // Parse the JSON from the text response
-    let parsedResult;
-    try {
-      // Try to extract JSON from the text response
-      const jsonMatch = result.match(/```json\n([\s\S]*?)\n```/) || result.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : result;
-      parsedResult = JSON.parse(jsonStr);
-    } catch (e) {
-      // If parsing fails, create a simple object with the transcript
-      parsedResult = { transcript: result, language: "unknown" };
-    }
-
+    const transcript = data.results?.[0]?.alternatives?.[0]?.transcript || "";
+    // Get detected language if available
+    const language = data.results?.[0]?.languageCode?.split('-')?.[0] || "english";
+    
     return new Response(
-      JSON.stringify(parsedResult),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ transcript, language }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
-
   } catch (error) {
+    console.error("Error in voice-to-text function:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Unknown error" }),
+      JSON.stringify({ error: error.message || "Failed to process audio" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

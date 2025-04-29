@@ -7,82 +7,69 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { text, language } = await req.json();
+    const { text, language = "en" } = await req.json();
     
     if (!text) {
       throw new Error("No text provided");
     }
-
-    // Determine language configuration
-    let langCode = "en-US";
-    if (language) {
-      // Map common language names to BCP-47 codes
-      const languageMap: Record<string, string> = {
-        "hindi": "hi-IN",
-        "telugu": "te-IN",
-        "tamil": "ta-IN",
-        "bengali": "bn-IN",
-        "marathi": "mr-IN",
-        "gujarati": "gu-IN",
-        "kannada": "kn-IN",
-        "malayalam": "ml-IN"
-      };
-      
-      // Try to find a match in our language map
-      const lcLanguage = language.toLowerCase();
-      langCode = languageMap[lcLanguage] || "en-US";
-    }
-
-    // Call Gemini API for text-to-speech (using simulation for now)
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${Deno.env.get("GEMINI_API_KEY")}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `Convert this text to a descriptive speech synthesis format with appropriate pauses and intonations for ${langCode}: "${text}"`
-                }
-              ]
-            }
-          ]
-        }),
-      }
-    );
-
+    
+    // Map languages to voice settings
+    const languageVoiceMap: Record<string, { languageCode: string, name: string, ssmlGender: string }> = {
+      "en": { languageCode: "en-US", name: "en-US-Neural2-F", ssmlGender: "FEMALE" },
+      "hi": { languageCode: "hi-IN", name: "hi-IN-Neural2-A", ssmlGender: "FEMALE" },
+      "te": { languageCode: "te-IN", name: "te-IN-Standard-A", ssmlGender: "FEMALE" },
+      "ta": { languageCode: "ta-IN", name: "ta-IN-Standard-A", ssmlGender: "FEMALE" },
+      "kn": { languageCode: "kn-IN", name: "kn-IN-Standard-A", ssmlGender: "FEMALE" },
+      "mr": { languageCode: "mr-IN", name: "mr-IN-Standard-A", ssmlGender: "FEMALE" },
+      "english": { languageCode: "en-US", name: "en-US-Neural2-F", ssmlGender: "FEMALE" },
+      "hindi": { languageCode: "hi-IN", name: "hi-IN-Neural2-A", ssmlGender: "FEMALE" },
+      "telugu": { languageCode: "te-IN", name: "te-IN-Standard-A", ssmlGender: "FEMALE" },
+      "tamil": { languageCode: "ta-IN", name: "ta-IN-Standard-A", ssmlGender: "FEMALE" },
+      "kannada": { languageCode: "kn-IN", name: "kn-IN-Standard-A", ssmlGender: "FEMALE" },
+      "marathi": { languageCode: "mr-IN", name: "mr-IN-Standard-A", ssmlGender: "FEMALE" },
+    };
+    
+    const voiceSettings = languageVoiceMap[language.toLowerCase()] || languageVoiceMap["en"];
+    
+    // Call Google Text-to-Speech API
+    const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get("GOOGLE_API_TOKEN")}`,
+      },
+      body: JSON.stringify({
+        input: { text },
+        voice: voiceSettings,
+        audioConfig: { audioEncoding: "MP3" },
+      }),
+    });
+    
     const data = await response.json();
     
     if (data.error) {
-      throw new Error(data.error.message || "Error in text to speech conversion");
+      throw new Error(data.error.message || "Text-to-speech conversion failed");
     }
-
-    // Since Gemini doesn't directly offer TTS, we're just returning the processed text
-    // In a real implementation, you would call a TTS API with this text
-    const processedText = data.candidates?.[0]?.content?.parts?.[0]?.text || text;
-
+    
+    // Return the audio content as a data URL
     return new Response(
       JSON.stringify({ 
-        text: processedText, 
-        language: langCode,
-        // In a real implementation, this would be the audio data
-        audioUrl: `data:audio/mp3;base64,SIMULATED_AUDIO_DATA` 
+        audioUrl: `data:audio/mp3;base64,${data.audioContent}` 
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
-
   } catch (error) {
+    console.error("Error in text-to-speech function:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Unknown error" }),
+      JSON.stringify({ error: error.message || "Failed to convert text to speech" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -468,7 +468,7 @@ const Triage = () => {
       </div>
       <BottomNavBar />
       
-      <style jsx>{`
+      <style>{`
         @keyframes waveform {
           0% { height: 3px; }
           50% { height: 12px; }

@@ -45,34 +45,37 @@ const SOSAlert = () => {
     const fetchResponders = async () => {
       if (user && alertSent) {
         try {
+          // Join emergency_responses with profiles table to get responder details
           const { data, error } = await supabase
             .from('emergency_responses')
             .select(`
               id,
               status,
-              profiles:responder_id (
-                id,
-                full_name,
-                frontline_type
-              )
+              profiles(id, full_name, frontline_type)
             `)
-            .eq('emergency_id', user.id)
-            .order('created_at', { ascending: false });
+            .eq('emergency_id', user.id);
 
           if (error) throw error;
           
           if (data && data.length > 0) {
             // Transform the data to match our responders structure
-            const transformedResponders = data.map((item) => ({
-              id: item.id,
-              name: item.profiles.full_name || 'Unknown Responder',
-              role: item.profiles.frontline_type === 1 ? 'Medical Officer' : 
-                   item.profiles.frontline_type === 2 ? 'ASHA Worker' : 
-                   item.profiles.frontline_type === 3 ? 'ANM' : 'Healthcare Worker',
-              status: item.status as "pending" | "accepted",
-              distance: "Calculating...", // This would come from a location service
-              phoneNumber: "+91 98765 43210", // This would come from profiles
-            }));
+            const transformedResponders = data.map((item: any) => {
+              const profile = item.profiles;
+              const roleMap: Record<number, string> = {
+                1: 'Medical Officer',
+                2: 'ASHA Worker',
+                3: 'ANM',
+              };
+              
+              return {
+                id: item.id,
+                name: profile?.full_name || 'Unknown Responder',
+                role: profile?.frontline_type ? roleMap[profile.frontline_type] || 'Healthcare Worker' : 'Healthcare Worker',
+                status: item.status as "pending" | "accepted",
+                distance: "Calculating...", // This would come from a location service
+                phoneNumber: "+91 98765 43210", // This would come from profiles
+              };
+            });
             
             setResponders(transformedResponders);
             return;
@@ -301,18 +304,35 @@ const SOSAlert = () => {
   const handleCancelEmergency = async () => {
     // Update emergency status in the database
     if (user) {
-      await supabase
-        .from('emergencies')
-        .update({ status: 'cancelled' })
-        .eq('patient_id', user.id)
-        .is('status', 'new');
+      try {
+        const { error } = await supabase
+          .from('emergencies')
+          .update({ status: 'cancelled' })
+          .eq('patient_id', user.id)
+          .eq('status', 'new');
+          
+        if (error) throw error;
+        
+        toast({
+          title: "Emergency Cancelled",
+          description: "Your emergency request has been cancelled.",
+        });
+        navigate('/');
+      } catch (error) {
+        console.error('Error cancelling emergency:', error);
+        toast({
+          title: "Error",
+          description: "Failed to cancel the emergency. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } else {
+      toast({
+        title: "Emergency Cancelled",
+        description: "Your emergency request has been cancelled.",
+      });
+      navigate('/');
     }
-    
-    toast({
-      title: "Emergency Cancelled",
-      description: "Your emergency request has been cancelled.",
-    });
-    navigate('/');
   };
 
   // Voice prompt overlay
