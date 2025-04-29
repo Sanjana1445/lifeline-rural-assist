@@ -33,6 +33,8 @@ serve(async (req) => {
       debugLog("Parsed request data", { 
         hasPrompt: !!requestData.prompt, 
         hasImage: !!requestData.image,
+        hasContext: !!requestData.context,
+        hasEmergency: !!requestData.isEmergency,
         language: requestData.language || 'english'
       });
     } catch (parseError) {
@@ -40,7 +42,7 @@ serve(async (req) => {
       throw new Error("Invalid request data: Could not parse JSON");
     }
     
-    const { prompt, image, language, history = [] } = requestData;
+    const { prompt, image, language, history = [], context, isEmergency = false, emergency_description = "" } = requestData;
     
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
@@ -50,6 +52,20 @@ serve(async (req) => {
     
     // Prepare system instructions based on use case
     let systemPrompt = "You are a medical assistant AI. Provide helpful medical guidance based on the user's questions or images. Always advise seeing a doctor for serious concerns.";
+    
+    // Add emergency context if applicable
+    if (isEmergency) {
+      systemPrompt = "You are an emergency medical assistant AI. The user has reported an emergency situation. Provide clear, concise, and potentially life-saving guidance while help is on the way. Focus on immediate actions the person can take to stay safe or provide first aid. Keep responses brief, direct, and focused on helping through the emergency. Include emotional reassurance but prioritize practical steps.";
+      
+      if (emergency_description) {
+        systemPrompt += ` The reported emergency is: ${emergency_description}.`;
+      }
+    }
+    
+    // Add custom context if provided
+    if (context) {
+      systemPrompt += ` ${context}`;
+    }
     
     // Add language instruction if non-English detected
     if (language && language !== "english") {
@@ -107,10 +123,10 @@ serve(async (req) => {
         body: JSON.stringify({
           contents,
           generationConfig: {
-            temperature: 0.4,
+            temperature: isEmergency ? 0.2 : 0.4, // Lower temperature for emergencies to be more factual
             topP: 0.95,
             topK: 40,
-            maxOutputTokens: 2048,
+            maxOutputTokens: isEmergency ? 1024 : 2048, // Shorter responses for emergencies
           },
           safetySettings: [
             {

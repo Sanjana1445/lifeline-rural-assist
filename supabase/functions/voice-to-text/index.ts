@@ -59,9 +59,11 @@ serve(async (req) => {
             sampleRateHertz: 48000,
             languageCode: "en-US",
             alternativeLanguageCodes: ["hi-IN", "te-IN", "ta-IN", "kn-IN", "mr-IN"],
-            model: "default",
+            model: "latest_long", // Using a more robust model for longer recordings
             enableAutomaticPunctuation: true,
-            useEnhanced: true, // Better quality transcription
+            useEnhanced: true, 
+            maxAlternatives: 2, // Get multiple transcription alternatives
+            profanityFilter: false,
           },
           audio: {
             content: base64Audio,
@@ -85,17 +87,24 @@ serve(async (req) => {
       }
       
       const transcript = data.results?.[0]?.alternatives?.[0]?.transcript || "";
+      const confidence = data.results?.[0]?.alternatives?.[0]?.confidence || 0;
       // Get detected language if available
       const language = data.results?.[0]?.languageCode?.split('-')?.[0] || "english";
       
       debugLog("Transcription successful", { 
         language,
+        confidence,
         textLength: transcript.length,
         text: transcript.substring(0, 100)
       });
       
       return new Response(
-        JSON.stringify({ transcript, language }),
+        JSON.stringify({ 
+          transcript, 
+          language,
+          confidence,
+          alternatives: data.results?.[0]?.alternatives?.slice(1) || [] 
+        }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }

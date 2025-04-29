@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Responder {
   id: string;
@@ -18,6 +19,8 @@ interface Responder {
   distance: string;
   phoneNumber: string;
 }
+
+type EmergencyStatus = "new" | "accepted" | "declined" | "cancelled";
 
 const SOSAlert = () => {
   const [responders, setResponders] = useState<Responder[]>([]);
@@ -30,9 +33,16 @@ const SOSAlert = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [emergencyId, setEmergencyId] = useState<string | null>(null);
+  const [textMessage, setTextMessage] = useState("");
+  const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const progressIntervalRef = useRef<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -52,6 +62,13 @@ const SOSAlert = () => {
       startRecording();
     }
   }, [showVoicePrompt]);
+  
+  // Scroll to bottom of chat when conversation history changes
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [conversationHistory]);
 
   useEffect(() => {
     // Load real responders from supabase if available
@@ -321,6 +338,12 @@ const SOSAlert = () => {
       setEmergencyDescription(shortDescription);
       console.log("Emergency description:", shortDescription);
       
+      // Add user message to conversation history
+      setConversationHistory(prev => [...prev, {
+        role: 'user',
+        content: transcript
+      }]);
+      
       // Hide voice prompt and show emergency screen
       setShowVoicePrompt(false);
       
@@ -338,6 +361,7 @@ const SOSAlert = () => {
       
       // Give emergency assistance tips
       await provideEmergencyGuidance(transcript);
+      
     } catch (error) {
       console.error('Error processing voice recording:', error);
       toast({
@@ -386,7 +410,7 @@ const SOSAlert = () => {
           patient_id: user.id,
           description: description,
           location: "User location", // In a real app, this would be GPS coordinates
-          status: "new"
+          status: "new" as EmergencyStatus
         })
         .select('id')
         .single();
@@ -465,6 +489,8 @@ const SOSAlert = () => {
         },
         body: JSON.stringify({
           prompt: `Based on this emergency description: "${transcript}", provide brief, clear first aid or emergency instructions that the person should follow until medical help arrives. Keep it short, simple, and actionable.`,
+          isEmergency: true,
+          emergency_description: transcript
         }),
       });
       
@@ -475,14 +501,106 @@ const SOSAlert = () => {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       
-      // Show the guidance in a toast
-      toast({
-        title: "Emergency Guidance",
-        description: data.text,
-        duration: 10000, // Show for 10 seconds
-      });
+      // Add AI response to conversation history
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: data.text
+      }]);
+      
+      // Convert to speech
+      speakResponse(data.text);
+      
     } catch (error) {
       console.error('Error getting emergency guidance:', error);
+    }
+  };
+  
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textMessage.trim()) return;
+    
+    // Add user message to conversation history
+    setConversationHistory(prev => [...prev, {
+      role: 'user',
+      content: textMessage
+    }]);
+    
+    const userMessage = textMessage;
+    setTextMessage('');
+    
+    try {
+      const response = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: userMessage,
+          history: conversationHistory,
+          isEmergency: true,
+          emergency_description: emergencyDescription
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      
+      // Add AI response to conversation history
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: data.text
+      }]);
+      
+      // Convert to speech
+      speakResponse(data.text);
+      
+    } catch (error) {
+      console.error('Error in chat:', error);
+      toast({
+        title: "Chat Error",
+        description: "There was an error processing your message. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  const speakResponse = async (text: string) => {
+    try {
+      // Send text to our text-to-speech function
+      const response = await fetch(`${window.location.origin}/functions/v1/text-to-speech`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          text, 
+          language: "english" 
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Play the audio
+      if (audioRef.current && data.audioBase64) {
+        const audioSrc = `data:audio/mp3;base64,${data.audioBase64}`;
+        audioRef.current.src = audioSrc;
+        audioRef.current.play();
+        setAudioPlaying(true);
+        
+        audioRef.current.onended = () => {
+          setAudioPlaying(false);
+        };
+      }
+    } catch (error) {
+      console.error('Error with text-to-speech:', error);
     }
   };
 
@@ -492,7 +610,7 @@ const SOSAlert = () => {
       try {
         const { error } = await supabase
           .from('emergencies')
-          .update({ status: 'cancelled' })
+          .update({ status: 'cancelled' as EmergencyStatus })
           .eq('id', emergencyId);
           
         if (error) throw error;
@@ -591,6 +709,9 @@ const SOSAlert = () => {
     );
   }
 
+  // Audio element for text-to-speech
+  const audioElement = <audio ref={audioRef} className="hidden"></audio>;
+
   // Main emergency alert screen
   return (
     <div className="min-h-screen bg-gray-50 relative pb-24">
@@ -638,6 +759,63 @@ const SOSAlert = () => {
           )}
         </div>
 
+        {/* Chat with AI for help during emergency */}
+        <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
+          <h2 className="text-lg font-semibold mb-3">Emergency AI Assistant</h2>
+          
+          <div 
+            ref={chatContainerRef} 
+            className="max-h-64 overflow-y-auto mb-4 space-y-3 p-1"
+          >
+            {conversationHistory.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">
+                Analyzing your emergency and preparing assistance...
+              </p>
+            ) : (
+              conversationHistory.map((msg, i) => (
+                <div 
+                  key={i} 
+                  className={`p-3 rounded-lg ${
+                    msg.role === 'user' 
+                      ? 'bg-blue-50 ml-8' 
+                      : 'bg-gray-50 mr-8'
+                  }`}
+                >
+                  <p className="text-sm font-semibold mb-1">
+                    {msg.role === 'user' ? 'You' : 'Emergency Assistant'}:
+                  </p>
+                  <p className="text-gray-700">{msg.content}</p>
+                </div>
+              ))
+            )}
+            
+            {audioPlaying && (
+              <div className="flex justify-center my-2">
+                <div className="bg-blue-100 px-3 py-1 rounded-full flex items-center">
+                  <span className="flex space-x-1 items-center">
+                    <span className="w-1 h-2 bg-blue-500 animate-waveform rounded-sm"></span>
+                    <span className="w-1 h-4 bg-blue-500 animate-waveform animation-delay-200 rounded-sm"></span>
+                    <span className="w-1 h-3 bg-blue-500 animate-waveform animation-delay-500 rounded-sm"></span>
+                  </span>
+                  <span className="ml-2 text-xs text-blue-700">Playing audio...</span>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <form onSubmit={handleChatSubmit} className="flex items-end space-x-2">
+            <Textarea 
+              value={textMessage}
+              onChange={(e) => setTextMessage(e.target.value)}
+              placeholder="Ask for help or advice..."
+              className="text-sm resize-none"
+            />
+            <Button type="submit" size="icon" variant="secondary">
+              <Send size={16} />
+            </Button>
+          </form>
+        </div>
+
         <h2 className="text-lg font-semibold mt-6 mb-3">Available Responders</h2>
 
         <div className="space-y-3">
@@ -680,6 +858,7 @@ const SOSAlert = () => {
           )}
         </div>
       </div>
+      
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t">
         <button
           onClick={handleCancelEmergency}
@@ -688,7 +867,26 @@ const SOSAlert = () => {
           Cancel Emergency
         </button>
       </div>
+      
+      {audioElement}
       <BottomNavBar />
+      
+      <style jsx>{`
+        @keyframes waveform {
+          0% { height: 3px; }
+          50% { height: 12px; }
+          100% { height: 3px; }
+        }
+        .animate-waveform {
+          animation: waveform 1s ease-in-out infinite;
+        }
+        .animation-delay-200 {
+          animation-delay: 0.2s;
+        }
+        .animation-delay-500 {
+          animation-delay: 0.5s;
+        }
+      `}</style>
     </div>
   );
 };

@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect } from "react";
 import { ArrowLeft, Upload, Mic, MicOff, Camera, Send } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -5,29 +6,45 @@ import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 
 const Triage = () => {
   const [recording, setRecording] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
-  const [message, setMessage] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState<string>("english");
-  const [useTTS, setUseTTS] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [waitingForVoiceInput, setWaitingForVoiceInput] = useState(false);
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const progressIntervalRef = useRef<number | null>(null);
+  
   const { toast } = useToast();
 
-  // Initialize camera
+  // Scroll to bottom of chat when conversation history changes
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [conversationHistory]);
+
+  // Cleanup function for progress interval
   useEffect(() => {
     return () => {
-      // Cleanup: stop camera stream when component unmounts
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+      
+      // Cleanup camera stream
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
@@ -101,8 +118,12 @@ const Triage = () => {
 
           toast({
             title: "Image captured",
-            description: "You can now add a voice message or submit the image for analysis",
+            description: "You can now add a voice message or speak to analyze the image",
           });
+          
+          // Start voice recording to ask about the image
+          setWaitingForVoiceInput(true);
+          
         } catch (e) {
           console.error('Error capturing image:', e);
           toast({
@@ -112,66 +133,6 @@ const Triage = () => {
           });
         }
       }
-    }
-  };
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    
-    if (!message.trim() && !selectedImage && !recording) {
-      toast({
-        title: "Input Required",
-        description: "Please speak or upload an image to continue.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsProcessing(true);
-    
-    // Add user message to conversation history
-    if (message.trim()) {
-      setConversationHistory(prev => [...prev, {role: 'user', content: message}]);
-    }
-    
-    try {
-      // Send query to Gemini API through our edge function
-      const response = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: message,
-          image: selectedImage,
-          language: detectedLanguage !== "english" ? detectedLanguage : undefined,
-          history: conversationHistory
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      
-      // Add AI response to conversation history
-      setConversationHistory(prev => [...prev, {role: 'assistant', content: data.text}]);
-      setMessage("");
-      
-      // If TTS is enabled, convert response to speech
-      if (useTTS && data.text) {
-        speakResponse(data.text);
-      }
-    } catch (error) {
-      console.error('Error processing query:', error);
-      toast({
-        title: "Processing Error",
-        description: "There was an error processing your request. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
     }
   };
 
@@ -185,7 +146,13 @@ const Triage = () => {
 
   const startVoiceRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
       
       audioChunksRef.current = [];
       const mediaRecorder = new MediaRecorder(stream, {
@@ -245,41 +212,64 @@ const Triage = () => {
 
   const processVoiceRecording = async (audioBlob: Blob) => {
     setIsProcessing(true);
+    setWaitingForVoiceInput(false);
+    
+    // Start progress animation
+    setProcessingProgress(0);
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    
+    progressIntervalRef.current = window.setInterval(() => {
+      setProcessingProgress(prev => {
+        const newProgress = prev + 5;
+        if (newProgress >= 95) {
+          clearInterval(progressIntervalRef.current!);
+          return 95;
+        }
+        return newProgress;
+      });
+    }, 300);
+    
     try {
       // Convert the audio blob to base64
       const reader = new FileReader();
       reader.readAsDataURL(audioBlob);
       
-      reader.onloadend = async () => {
-        const base64Audio = reader.result as string;
-        
-        // Send to our voice-to-text function
-        const response = await fetch(`${window.location.origin}/functions/v1/voice-to-text`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ audioData: base64Audio }),
-        });
-        
-        const data = await response.json();
-        
-        if (data.error) {
-          throw new Error(data.error);
-        }
-        
-        const transcript = data.transcript || '';
-        const language = data.language?.toLowerCase() || 'english';
-        
-        setMessage(transcript);
-        setDetectedLanguage(language);
-        setUseTTS(true); // Enable TTS by default for voice queries
-        
-        // Automatically submit the query
-        setTimeout(() => {
-          handleSubmit();
-        }, 100);
-      };
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      
+      // Send to our voice-to-text function
+      const response = await fetch(`${window.location.origin}/functions/v1/voice-to-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audioData: base64Audio }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      const transcript = data.transcript || '';
+      const language = data.language?.toLowerCase() || 'english';
+      
+      setDetectedLanguage(language);
+      
+      // Add user message to conversation
+      setConversationHistory(prev => [
+        ...prev, 
+        { role: 'user', content: transcript }
+      ]);
+      
+      // Process with Gemini
+      await sendToGemini(transcript);
+      
     } catch (error) {
       console.error('Error processing voice recording:', error);
       toast({
@@ -287,7 +277,56 @@ const Triage = () => {
         description: "There was an error processing your voice. Please try again.",
         variant: "destructive",
       });
+    } finally {
       setIsProcessing(false);
+      
+      // Ensure progress is reset
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        setProcessingProgress(100);
+      }
+    }
+  };
+
+  const sendToGemini = async (message: string) => {
+    try {
+      // Send to Gemini API through our edge function
+      const response = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: message,
+          image: selectedImage,
+          language: detectedLanguage !== "english" ? detectedLanguage : undefined,
+          history: conversationHistory,
+          context: "You are a medical AI assistant helping with symptom triage. Analyze the user's symptoms carefully and provide helpful guidance. For images, identify visible medical conditions or symptoms. Suggest next steps based on severity."
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Add AI response to conversation
+      setConversationHistory(prev => [
+        ...prev, 
+        { role: 'assistant', content: data.text }
+      ]);
+      
+      // Speak the response
+      speakResponse(data.text);
+      
+    } catch (error) {
+      console.error('Error processing query:', error);
+      toast({
+        title: "Processing Error",
+        description: "There was an error analyzing your input. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -300,8 +339,11 @@ const Triage = () => {
           setSelectedImage(event.target.result as string);
           toast({
             title: "Image Uploaded",
-            description: "You can now add a voice message or submit the image for analysis",
+            description: "You can now speak to analyze the image",
           });
+          
+          // Prompt for voice input
+          setWaitingForVoiceInput(true);
         }
       };
       reader.readAsDataURL(file);
@@ -349,10 +391,14 @@ const Triage = () => {
     }
   };
 
+  const handleAddMoreDetails = () => {
+    setWaitingForVoiceInput(true);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <div className="p-4 pb-20">
+      <div className="p-4 pb-24">
         <div className="flex items-center mb-4">
           <Link to="/" className="mr-2">
             <ArrowLeft />
@@ -434,55 +480,52 @@ const Triage = () => {
 
           {/* Voice Input Button - Centered */}
           <div className="flex flex-col items-center mt-6 mb-4">
-            <button
-              type="button"
-              onClick={toggleRecording}
-              className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                recording ? "bg-red-500 text-white animate-pulse" : "bg-eresq-navy text-white"
-              }`}
-            >
-              {recording ? <MicOff size={24} /> : <Mic size={24} />}
-            </button>
-            <p className="mt-2 text-sm text-gray-600">
-              {recording ? "Tap to stop recording" : "Tap to speak"}
-            </p>
+            {isProcessing ? (
+              <div className="w-full max-w-md space-y-2">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 bg-blue-500 rounded-full animate-pulse"></div>
+                  <p>Processing your input...</p>
+                </div>
+                <Progress value={processingProgress} className="h-2" />
+                <p className="text-sm text-center text-gray-500">Analyzing your voice and preparing response</p>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleRecording}
+                  disabled={cameraActive}
+                  className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                    recording ? "bg-red-500 text-white animate-pulse" : "bg-eresq-navy text-white"
+                  } ${cameraActive ? "opacity-50" : ""}`}
+                >
+                  {recording ? <MicOff size={24} /> : <Mic size={24} />}
+                </button>
+                <p className="mt-2 text-sm text-gray-600">
+                  {waitingForVoiceInput 
+                    ? "Please describe your symptoms or ask about the image" 
+                    : recording 
+                      ? "Tap to stop recording" 
+                      : "Tap to speak"}
+                </p>
+                {waitingForVoiceInput && (
+                  <div className="mt-2 text-xs text-blue-600 animate-pulse">
+                    Waiting for your voice input...
+                  </div>
+                )}
+              </>
+            )}
           </div>
-          
-          {/* Hidden submit button for form submission via Enter key */}
-          <form onSubmit={handleSubmit} className="hidden">
-            <button type="submit">Submit</button>
-          </form>
-
-          {/* Submit button for image analysis */}
-          {selectedImage && (
-            <Button
-              type="button"
-              onClick={() => handleSubmit()}
-              disabled={isProcessing}
-              className={`w-full mt-4 bg-eresq-navy text-white p-3 rounded-lg hover:bg-opacity-90 flex items-center justify-center ${
-                isProcessing ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              {isProcessing ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Processing...</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <Send size={16} />
-                  <span>Analyze Image</span>
-                </div>
-              )}
-            </Button>
-          )}
         </div>
 
         {/* Conversation History */}
         {conversationHistory.length > 0 && (
           <div className="bg-white rounded-lg p-4 shadow-sm mt-4">
             <h3 className="font-medium text-eresq-navy mb-2">Conversation:</h3>
-            <div className="space-y-4">
+            <div 
+              ref={chatContainerRef}
+              className="space-y-4 max-h-80 overflow-y-auto"
+            >
               {conversationHistory.map((msg, i) => (
                 <div 
                   key={i} 
@@ -523,39 +566,39 @@ const Triage = () => {
                   )}
                 </div>
               ))}
+              
+              {audioPlaying && (
+                <div className="flex justify-center my-2">
+                  <div className="bg-blue-100 px-3 py-1 rounded-full flex items-center">
+                    <span className="flex space-x-1 items-center">
+                      <span className="w-1 h-2 bg-blue-500 animate-waveform rounded-sm"></span>
+                      <span className="w-1 h-4 bg-blue-500 animate-waveform animation-delay-200 rounded-sm"></span>
+                      <span className="w-1 h-3 bg-blue-500 animate-waveform animation-delay-500 rounded-sm"></span>
+                    </span>
+                    <span className="ml-2 text-xs text-blue-700">Playing audio...</span>
+                  </div>
+                </div>
+              )}
             </div>
             
-            {/* Speech button for last AI response */}
-            {conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'assistant' && (
+            {/* Button to add more details */}
+            {conversationHistory.length > 0 && !isProcessing && !recording && (
               <div className="flex justify-center mt-4">
                 <Button
                   type="button"
-                  onClick={() => speakResponse(conversationHistory[conversationHistory.length - 1].content)}
-                  disabled={audioPlaying}
-                  variant="outline"
+                  onClick={handleAddMoreDetails}
                   className="flex items-center space-x-2"
+                  variant="outline"
                 >
-                  {audioPlaying ? (
-                    <>
-                      <span className="w-4 relative flex justify-center">
-                        <span className="w-0.5 h-2 bg-current mx-px animate-waveform"></span>
-                        <span className="w-0.5 h-3 bg-current mx-px animate-waveform animation-delay-200"></span>
-                        <span className="w-0.5 h-1.5 bg-current mx-px animate-waveform animation-delay-500"></span>
-                      </span>
-                      <span>Playing audio...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Mic size={16} />
-                      <span>Listen to response</span>
-                    </>
-                  )}
+                  <Mic size={16} />
+                  <span>Add more details</span>
                 </Button>
               </div>
             )}
           </div>
         )}
       </div>
+      
       <BottomNavBar />
       
       <style>
