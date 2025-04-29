@@ -9,6 +9,71 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      emergencies: {
+        Row: {
+          created_at: string | null
+          description: string
+          id: string
+          location: string | null
+          patient_id: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description: string
+          id?: string
+          location?: string | null
+          patient_id: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string
+          id?: string
+          location?: string | null
+          patient_id?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      emergency_responses: {
+        Row: {
+          created_at: string | null
+          emergency_id: string
+          id: string
+          responder_id: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          emergency_id: string
+          id?: string
+          responder_id: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          emergency_id?: string
+          id?: string
+          responder_id?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emergency_responses_emergency_id_fkey"
+            columns: ["emergency_id"]
+            isOneToOne: false
+            referencedRelation: "emergencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       frontline_types: {
         Row: {
           description: string | null
