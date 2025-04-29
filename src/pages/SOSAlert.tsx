@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 
 interface Responder {
   id: string;
@@ -27,12 +28,23 @@ const SOSAlert = () => {
   const [emergencyDescription, setEmergencyDescription] = useState("");
   const [showVoicePrompt, setShowVoicePrompt] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
   const [emergencyId, setEmergencyId] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const progressIntervalRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+
+  // Cleanup function for progress interval
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (showVoicePrompt) {
@@ -92,6 +104,12 @@ const SOSAlert = () => {
                 const profile = profilesData.find(p => p.id === responseItem.responder_id);
                 
                 if (!profile) return null;
+
+                // Ensure status is one of the allowed types
+                let typedStatus: "pending" | "accepted" = "pending";
+                if (responseItem.status === "accepted") {
+                  typedStatus = "accepted";
+                }
                 
                 return {
                   id: responseItem.id,
@@ -99,7 +117,7 @@ const SOSAlert = () => {
                   role: profile.frontline_type && typeMap[profile.frontline_type] 
                     ? typeMap[profile.frontline_type] 
                     : 'Healthcare Worker',
-                  status: responseItem.status as "pending" | "accepted",
+                  status: typedStatus,
                   distance: "Calculating...", // This would come from a location service
                   phoneNumber: profile.phone || "+91 98765 43210",
                 };
@@ -158,7 +176,7 @@ const SOSAlert = () => {
     // Subscribe to emergency_responses changes to get real-time updates
     if (emergencyId) {
       const subscription = supabase
-        .channel('any')
+        .channel('emergency-responses-changes')
         .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
@@ -240,65 +258,86 @@ const SOSAlert = () => {
 
   const processVoiceRecording = async (audioBlob: Blob) => {
     setIsProcessing(true);
+    
+    // Start progress animation
+    setProcessingProgress(0);
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    
+    progressIntervalRef.current = window.setInterval(() => {
+      setProcessingProgress(prev => {
+        const newProgress = prev + 5;
+        if (newProgress >= 95) {
+          clearInterval(progressIntervalRef.current!);
+          return 95;
+        }
+        return newProgress;
+      });
+    }, 300);
+    
     try {
       // Convert the audio blob to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
+      const base64Audio = await blobToBase64(audioBlob);
       
-      reader.onloadend = async () => {
-        const base64Audio = reader.result as string;
-        
-        // Send to our voice-to-text function
-        const response = await fetch(`${window.location.origin}/functions/v1/voice-to-text`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ audioData: base64Audio }),
-        });
-        
-        const data = await response.json();
-        
-        if (data.error) {
-          throw new Error(data.error);
-        }
-        
-        const transcript = data.transcript || '';
-        setTranscription(transcript);
-        
-        // Process the transcript with Gemini to extract emergency details
-        const geminiResponse = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            prompt: `Extract a brief emergency description (less than 70 characters) from this transcript: "${transcript}". Only return the short description, nothing else.`,
-          }),
-        });
-        
-        const geminiData = await geminiResponse.json();
-        if (geminiData.error) throw new Error(geminiData.error);
-        
-        const shortDescription = geminiData.text.substring(0, 70);
-        setEmergencyDescription(shortDescription);
-        
-        // Hide voice prompt and show emergency screen
-        setShowVoicePrompt(false);
-        
-        // Create emergency in database and notify frontline workers
-        const emergencyRecord = await createEmergencyRecord(shortDescription || transcript);
-        if (emergencyRecord?.id) {
-          setEmergencyId(emergencyRecord.id);
-          await notifyFrontlineWorkers(emergencyRecord.id);
-        }
-        
-        setAlertSent(true);
-        setIsProcessing(false);
-        
-        // Give emergency assistance tips
-        provideEmergencyGuidance(transcript);
-      };
+      // Send to our voice-to-text function
+      const response = await fetch(`${window.location.origin}/functions/v1/voice-to-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audioData: base64Audio }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      const transcript = data.transcript || '';
+      setTranscription(transcript);
+      console.log("Received transcript:", transcript);
+      
+      // Process the transcript with Gemini to extract emergency details
+      const geminiResponse = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: `Extract a brief emergency description (less than 70 characters) from this transcript: "${transcript}". Only return the short description, nothing else.`,
+        }),
+      });
+      
+      if (!geminiResponse.ok) {
+        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+      }
+      
+      const geminiData = await geminiResponse.json();
+      if (geminiData.error) throw new Error(geminiData.error);
+      
+      const shortDescription = geminiData.text.substring(0, 70) || "Medical emergency reported";
+      setEmergencyDescription(shortDescription);
+      console.log("Emergency description:", shortDescription);
+      
+      // Hide voice prompt and show emergency screen
+      setShowVoicePrompt(false);
+      
+      // Set progress to 100% to indicate completion
+      setProcessingProgress(100);
+      
+      // Create emergency in database and notify frontline workers
+      const emergencyRecord = await createEmergencyRecord(shortDescription || transcript);
+      if (emergencyRecord?.id) {
+        setEmergencyId(emergencyRecord.id);
+        await notifyFrontlineWorkers(emergencyRecord.id);
+      }
+      
+      setAlertSent(true);
+      
+      // Give emergency assistance tips
+      await provideEmergencyGuidance(transcript);
     } catch (error) {
       console.error('Error processing voice recording:', error);
       toast({
@@ -306,8 +345,32 @@ const SOSAlert = () => {
         description: "There was an error processing your voice recording. Please try again or skip voice input.",
         variant: "destructive",
       });
+      
+      // Still allow emergency to be sent despite error
+      setShowVoicePrompt(false);
+      // Create a default emergency
+      const emergencyRecord = await createEmergencyRecord("Medical emergency reported");
+      if (emergencyRecord?.id) {
+        setEmergencyId(emergencyRecord.id);
+        await notifyFrontlineWorkers(emergencyRecord.id);
+      }
+      setAlertSent(true);
+    } finally {
       setIsProcessing(false);
+      // Ensure progress is reset
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
     }
+  };
+
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   };
 
   const createEmergencyRecord = async (description: string) => {
@@ -323,6 +386,7 @@ const SOSAlert = () => {
           patient_id: user.id,
           description: description,
           location: "User location", // In a real app, this would be GPS coordinates
+          status: "new"
         })
         .select('id')
         .single();
@@ -404,6 +468,10 @@ const SOSAlert = () => {
         }),
       });
       
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+      
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       
@@ -474,9 +542,13 @@ const SOSAlert = () => {
           </p>
           
           {isProcessing ? (
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-              <p>Processing your emergency...</p>
+            <div className="w-full max-w-md space-y-2">
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+                <p>Processing your emergency...</p>
+              </div>
+              <Progress value={processingProgress} className="h-2" />
+              <p className="text-sm text-center text-gray-500">Analyzing your voice and preparing emergency response</p>
             </div>
           ) : (
             <div className="flex flex-col space-y-4">
