@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, CheckCircle, CircleX, PhoneCall, Mic, MicOff, Send } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
@@ -221,7 +222,7 @@ const SOSAlert = () => {
       
       audioChunksRef.current = [];
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm'
+        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
       });
       
       mediaRecorder.ondataavailable = (event) => {
@@ -231,7 +232,9 @@ const SOSAlert = () => {
       };
       
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { 
+          type: mediaRecorder.mimeType 
+        });
         setAudioBlob(audioBlob);
         
         // Process the recording
@@ -305,7 +308,18 @@ const SOSAlert = () => {
         body: JSON.stringify({ audioData: base64Audio }),
       });
       
-      const data = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Voice-to-text API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from voice-to-text service");
+      }
       
       if (data.error) {
         throw new Error(data.error);
@@ -327,10 +341,18 @@ const SOSAlert = () => {
       });
       
       if (!geminiResponse.ok) {
-        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+        const errorText = await geminiResponse.text();
+        throw new Error(`Gemini API error: ${geminiResponse.status} ${errorText}`);
       }
       
-      const geminiData = await geminiResponse.json();
+      let geminiData;
+      try {
+        geminiData = await geminiResponse.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from Gemini service");
+      }
+      
       if (geminiData.error) throw new Error(geminiData.error);
       
       const shortDescription = geminiData.text.substring(0, 70) || "Medical emergency reported";
@@ -378,6 +400,12 @@ const SOSAlert = () => {
         await notifyFrontlineWorkers(emergencyRecord.id);
       }
       setAlertSent(true);
+      
+      // Add a fallback conversation to ensure the AI provides some guidance
+      setConversationHistory([
+        {role: 'user', content: "I have a medical emergency"},
+        {role: 'assistant', content: "I'll help you through this emergency. First, try to remain calm. Can you briefly tell me what's happening?"}
+      ]);
     } finally {
       setIsProcessing(false);
       // Ensure progress is reset
@@ -494,10 +522,18 @@ const SOSAlert = () => {
       });
       
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${errorText}`);
       }
       
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from Gemini service");
+      }
+      
       if (data.error) throw new Error(data.error);
       
       // Add AI response to conversation history
@@ -511,6 +547,16 @@ const SOSAlert = () => {
       
     } catch (error) {
       console.error('Error getting emergency guidance:', error);
+      
+      // Add fallback guidance if Gemini fails
+      const fallbackGuidance = "Stay calm and try to relax. Help is on the way. If you're with someone experiencing an emergency, ensure they're in a safe position. Don't give them anything to eat or drink. Monitor their breathing and consciousness. I'll stay with you until help arrives.";
+      
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: fallbackGuidance
+      }]);
+      
+      speakResponse(fallbackGuidance);
     }
   };
   
@@ -542,10 +588,18 @@ const SOSAlert = () => {
       });
       
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${errorText}`);
       }
       
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from Gemini service");
+      }
+      
       if (data.error) throw new Error(data.error);
       
       // Add AI response to conversation history
@@ -559,6 +613,17 @@ const SOSAlert = () => {
       
     } catch (error) {
       console.error('Error in chat:', error);
+      
+      // Add fallback response if API fails
+      const fallbackResponse = "I'm sorry, I'm having trouble processing your request right now. Please focus on following the previous instructions while we wait for help to arrive.";
+      
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: fallbackResponse
+      }]);
+      
+      speakResponse(fallbackResponse);
+      
       toast({
         title: "Chat Error",
         description: "There was an error processing your message. Please try again.",
@@ -581,7 +646,18 @@ const SOSAlert = () => {
         }),
       });
       
-      const data = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Text-to-speech API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from text-to-speech service");
+      }
       
       if (data.error) {
         throw new Error(data.error);
@@ -591,12 +667,18 @@ const SOSAlert = () => {
       if (audioRef.current && data.audioBase64) {
         const audioSrc = `data:audio/mp3;base64,${data.audioBase64}`;
         audioRef.current.src = audioSrc;
-        audioRef.current.play();
-        setAudioPlaying(true);
         
-        audioRef.current.onended = () => {
+        try {
+          await audioRef.current.play();
+          setAudioPlaying(true);
+          
+          audioRef.current.onended = () => {
+            setAudioPlaying(false);
+          };
+        } catch (playError) {
+          console.error("Error playing audio:", playError);
           setAudioPlaying(false);
-        };
+        }
       }
     } catch (error) {
       console.error('Error with text-to-speech:', error);

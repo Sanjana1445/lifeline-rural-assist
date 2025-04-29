@@ -54,29 +54,32 @@ const Triage = () => {
 
   const startCamera = async () => {
     try {
-      // Request camera permissions explicitly
+      // Request camera permissions explicitly with proper constraints
       const constraints = { 
         video: { 
-          facingMode: "environment",
+          facingMode: { ideal: "environment" },
           width: { ideal: 1280 },
           height: { ideal: 720 } 
         } 
       };
       
+      console.log("Requesting camera access with constraints:", constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(err => {
-          console.error('Video play error:', err);
+        try {
+          await videoRef.current.play();
+          setCameraActive(true);
+          
+          toast({
+            title: "Camera active",
+            description: "Tap the center button to capture an image",
+          });
+        } catch (playError) {
+          console.error('Video play error:', playError);
           throw new Error('Failed to start video preview');
-        });
-        setCameraActive(true);
-        
-        toast({
-          title: "Camera active",
-          description: "Tap the center button to capture an image",
-        });
+        }
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -156,7 +159,7 @@ const Triage = () => {
       
       audioChunksRef.current = [];
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm'
+        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
       });
       
       mediaRecorder.ondataavailable = (event) => {
@@ -166,7 +169,9 @@ const Triage = () => {
       };
       
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { 
+          type: mediaRecorder.mimeType 
+        });
         await processVoiceRecording(audioBlob);
       };
       
@@ -250,7 +255,18 @@ const Triage = () => {
         body: JSON.stringify({ audioData: base64Audio }),
       });
       
-      const data = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Voice-to-text API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from voice-to-text service");
+      }
       
       if (data.error) {
         throw new Error(data.error);
@@ -277,6 +293,11 @@ const Triage = () => {
         description: "There was an error processing your voice. Please try again.",
         variant: "destructive",
       });
+      
+      // Add fallback user message to conversation if processing failed but we have conversation history
+      if (conversationHistory.length > 0) {
+        await sendToGemini("I'm having trouble explaining my symptoms. Can you help guide me through some common questions?");
+      }
     } finally {
       setIsProcessing(false);
       
@@ -305,7 +326,18 @@ const Triage = () => {
         }),
       });
       
-      const data = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from Gemini service");
+      }
       
       if (data.error) {
         throw new Error(data.error);
@@ -322,6 +354,17 @@ const Triage = () => {
       
     } catch (error) {
       console.error('Error processing query:', error);
+      
+      // Add fallback AI response if the Gemini API call fails
+      const fallbackMessage = "I'm sorry, I'm having trouble processing your request right now. Could you please try again or describe your symptoms differently?";
+      
+      setConversationHistory(prev => [
+        ...prev, 
+        { role: 'assistant', content: fallbackMessage }
+      ]);
+      
+      speakResponse(fallbackMessage);
+      
       toast({
         title: "Processing Error",
         description: "There was an error analyzing your input. Please try again.",
@@ -364,7 +407,18 @@ const Triage = () => {
         }),
       });
       
-      const data = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Text-to-speech API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from text-to-speech service");
+      }
       
       if (data.error) {
         throw new Error(data.error);
@@ -374,12 +428,18 @@ const Triage = () => {
       if (audioRef.current && data.audioBase64) {
         const audioSrc = `data:audio/mp3;base64,${data.audioBase64}`;
         audioRef.current.src = audioSrc;
-        audioRef.current.play();
-        setAudioPlaying(true);
         
-        audioRef.current.onended = () => {
+        try {
+          await audioRef.current.play();
+          setAudioPlaying(true);
+          
+          audioRef.current.onended = () => {
+            setAudioPlaying(false);
+          };
+        } catch (playError) {
+          console.error("Error playing audio:", playError);
           setAudioPlaying(false);
-        };
+        }
       }
     } catch (error) {
       console.error('Error with text-to-speech:', error);
@@ -420,6 +480,7 @@ const Triage = () => {
                 className="w-full h-64 object-cover rounded-lg bg-black"
                 autoPlay 
                 playsInline
+                muted // Add muted attribute to ensure autoplay works
               />
               <button
                 onClick={captureImage}
