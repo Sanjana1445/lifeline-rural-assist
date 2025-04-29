@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, CheckCircle, CircleX, PhoneCall, Mic, MicOff, Send } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
@@ -871,7 +870,8 @@ const SOSAlert = () => {
       {audioElement}
       <BottomNavBar />
       
-      <style jsx>{`
+      <style>
+        {`
         @keyframes waveform {
           0% { height: 3px; }
           50% { height: 12px; }
@@ -886,7 +886,8 @@ const SOSAlert = () => {
         .animation-delay-500 {
           animation-delay: 0.5s;
         }
-      `}</style>
+        `}
+      </style>
     </div>
   );
 };
