@@ -115,14 +115,21 @@ const FrontlineDashboard = () => {
               // Find the patient profile
               const patient = patientData?.find(p => p.id === emergency.patient_id);
               
+              // Ensure status is one of the allowed types
+              let typedStatus: "new" | "accepted" | "declined" = "new";
+              if (response?.status === "accepted") {
+                typedStatus = "accepted";
+              } else if (response?.status === "declined") {
+                typedStatus = "declined";
+              }
+              
               return {
                 id: emergency.id,
                 patientName: patient?.full_name || "Unknown Patient",
                 location: emergency.location || "Unknown Location",
                 distance: "Calculating...", // Would come from location service
                 timeElapsed: getTimeElapsed(emergency.created_at),
-                status: response?.status === "accepted" ? "accepted" : 
-                        response?.status === "declined" ? "declined" : "new",
+                status: typedStatus,
                 description: emergency.description,
                 emergencyResponseId: response?.id,
               };

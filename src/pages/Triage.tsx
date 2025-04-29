@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from "react";
 import { ArrowLeft, Upload, Mic, MicOff, Camera, Send } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -559,7 +558,8 @@ const Triage = () => {
       </div>
       <BottomNavBar />
       
-      <style jsx>{`
+      <style>
+        {`
         @keyframes waveform {
           0% { height: 3px; }
           50% { height: 12px; }
@@ -574,7 +574,8 @@ const Triage = () => {
         .animation-delay-500 {
           animation-delay: 0.5s;
         }
-      `}</style>
+        `}
+      </style>
     </div>
   );
 };
