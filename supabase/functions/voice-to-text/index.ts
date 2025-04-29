@@ -19,7 +19,7 @@ serve(async (req) => {
       throw new Error("No audio data provided");
     }
     
-    // Extract the base64-encoded audio data (remove the data URL prefix)
+    // Extract the base64-encoded audio data (remove the data URL prefix if present)
     const base64Audio = audioData.split(',')[1] || audioData;
     
     // Call Google Speech-to-Text API
@@ -37,6 +37,7 @@ serve(async (req) => {
           alternativeLanguageCodes: ["hi-IN", "te-IN", "ta-IN", "kn-IN", "mr-IN"],
           model: "default",
           enableAutomaticPunctuation: true,
+          useEnhanced: true, // Better quality transcription
         },
         audio: {
           content: base64Audio,
@@ -47,12 +48,15 @@ serve(async (req) => {
     const data = await response.json();
     
     if (data.error) {
+      console.error("Speech-to-Text API error:", JSON.stringify(data.error));
       throw new Error(data.error.message || "Speech recognition failed");
     }
     
     const transcript = data.results?.[0]?.alternatives?.[0]?.transcript || "";
     // Get detected language if available
     const language = data.results?.[0]?.languageCode?.split('-')?.[0] || "english";
+    
+    console.log("Transcription successful. Language:", language, "Text length:", transcript.length);
     
     return new Response(
       JSON.stringify({ transcript, language }),
@@ -63,7 +67,10 @@ serve(async (req) => {
   } catch (error) {
     console.error("Error in voice-to-text function:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Failed to process audio" }),
+      JSON.stringify({ 
+        error: error.message || "Failed to process audio",
+        timestamp: new Date().toISOString()
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

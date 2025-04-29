@@ -6,9 +6,9 @@ import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 
 const Triage = () => {
-  const [query, setQuery] = useState("");
   const [recording, setRecording] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [message, setMessage] = useState("");
@@ -17,6 +17,7 @@ const Triage = () => {
   const [detectedLanguage, setDetectedLanguage] = useState<string>("english");
   const [useTTS, setUseTTS] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -37,17 +38,35 @@ const Triage = () => {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      // Request camera permissions explicitly
+      const constraints = { 
+        video: { 
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 } 
+        } 
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play().catch(err => {
+          console.error('Video play error:', err);
+          throw new Error('Failed to start video preview');
+        });
         setCameraActive(true);
+        
+        toast({
+          title: "Camera active",
+          description: "Tap the center button to capture an image",
+        });
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
       toast({
         title: "Camera Error",
-        description: "Unable to access your camera. Please check permissions.",
+        description: "Unable to access your camera. Please check permissions and try again.",
         variant: "destructive",
       });
     }
@@ -57,6 +76,7 @@ const Triage = () => {
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
       setCameraActive(false);
     }
   };
@@ -64,7 +84,7 @@ const Triage = () => {
   const captureImage = () => {
     if (canvasRef.current && videoRef.current) {
       const context = canvasRef.current.getContext('2d');
-      if (context) {
+      if (context && videoRef.current.videoWidth) {
         // Set canvas dimensions to match video
         canvasRef.current.width = videoRef.current.videoWidth;
         canvasRef.current.height = videoRef.current.videoHeight;
@@ -72,29 +92,48 @@ const Triage = () => {
         // Draw the video frame to the canvas
         context.drawImage(videoRef.current, 0, 0);
         
-        // Convert the canvas to a data URL and set as selected image
-        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
-        setSelectedImage(dataUrl);
-        
-        // Stop the camera stream
-        stopCamera();
+        try {
+          // Convert the canvas to a data URL and set as selected image
+          const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.8);
+          setSelectedImage(dataUrl);
+          
+          // Stop the camera stream
+          stopCamera();
+
+          toast({
+            title: "Image captured",
+            description: "You can now add a voice message or submit the image for analysis",
+          });
+        } catch (e) {
+          console.error('Error capturing image:', e);
+          toast({
+            title: "Error",
+            description: "Failed to capture image. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim() && !selectedImage) {
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    
+    if (!message.trim() && !selectedImage && !recording) {
       toast({
         title: "Input Required",
-        description: "Please enter a query or upload an image.",
+        description: "Please speak or upload an image to continue.",
         variant: "destructive",
       });
       return;
     }
 
     setIsProcessing(true);
-    setMessage("Processing your query...");
+    
+    // Add user message to conversation history
+    if (message.trim()) {
+      setConversationHistory(prev => [...prev, {role: 'user', content: message}]);
+    }
     
     try {
       // Send query to Gemini API through our edge function
@@ -104,9 +143,10 @@ const Triage = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt: query,
+          prompt: message,
           image: selectedImage,
-          language: detectedLanguage !== "english" ? detectedLanguage : undefined
+          language: detectedLanguage !== "english" ? detectedLanguage : undefined,
+          history: conversationHistory
         }),
       });
       
@@ -116,7 +156,9 @@ const Triage = () => {
         throw new Error(data.error);
       }
       
-      setMessage(data.text);
+      // Add AI response to conversation history
+      setConversationHistory(prev => [...prev, {role: 'assistant', content: data.text}]);
+      setMessage("");
       
       // If TTS is enabled, convert response to speech
       if (useTTS && data.text) {
@@ -129,7 +171,6 @@ const Triage = () => {
         description: "There was an error processing your request. Please try again.",
         variant: "destructive",
       });
-      setMessage("Sorry, there was an error processing your request. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -148,7 +189,9 @@ const Triage = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
       audioChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm'
+      });
       
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -229,20 +272,20 @@ const Triage = () => {
         const transcript = data.transcript || '';
         const language = data.language?.toLowerCase() || 'english';
         
-        setQuery(transcript);
+        setMessage(transcript);
         setDetectedLanguage(language);
         setUseTTS(true); // Enable TTS by default for voice queries
         
         // Automatically submit the query
         setTimeout(() => {
-          handleSubmit(new Event('submit') as unknown as React.FormEvent);
+          handleSubmit();
         }, 100);
       };
     } catch (error) {
       console.error('Error processing voice recording:', error);
       toast({
         title: "Voice Processing Error",
-        description: "There was an error processing your voice. Please try text input.",
+        description: "There was an error processing your voice. Please try again.",
         variant: "destructive",
       });
       setIsProcessing(false);
@@ -256,6 +299,10 @@ const Triage = () => {
       reader.onload = (event) => {
         if (event.target?.result) {
           setSelectedImage(event.target.result as string);
+          toast({
+            title: "Image Uploaded",
+            description: "You can now add a voice message or submit the image for analysis",
+          });
         }
       };
       reader.readAsDataURL(file);
@@ -282,9 +329,10 @@ const Triage = () => {
         throw new Error(data.error);
       }
       
-      // In a real implementation, we would play the audio
-      if (audioRef.current && data.audioUrl) {
-        audioRef.current.src = data.audioUrl;
+      // Play the audio
+      if (audioRef.current && data.audioBase64) {
+        const audioSrc = `data:audio/mp3;base64,${data.audioBase64}`;
+        audioRef.current.src = audioSrc;
         audioRef.current.play();
         setAudioPlaying(true);
         
@@ -385,90 +433,133 @@ const Triage = () => {
             </div>
           )}
 
-          {/* Query Input */}
-          <form onSubmit={handleSubmit} className="mt-4">
-            <div className="relative">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={recording ? "Listening..." : "Ask about symptoms or medication..."}
-                className={`w-full p-3 border ${
-                  recording ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                } rounded-lg pr-12`}
-                disabled={recording}
-              />
-              <button
-                type="button"
-                onClick={toggleRecording}
-                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-full ${
-                  recording ? "bg-red-100 text-red-600" : "text-gray-400"
-                }`}
-              >
-                {recording ? (
-                  <MicOff size={20} className="animate-pulse" />
-                ) : (
-                  <Mic size={20} />
-                )}
-              </button>
-            </div>
-            <div className="flex items-center mt-2 space-x-2">
-              <button
-                type="submit"
-                disabled={isProcessing || recording}
-                className={`flex-1 bg-eresq-navy text-white p-3 rounded-lg hover:bg-opacity-90 flex items-center justify-center ${
-                  (isProcessing || recording) ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-              >
-                {isProcessing ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Processing...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <Send size={16} />
-                    <span>Get Help</span>
-                  </div>
-                )}
-              </button>
-
-              {message && (
-                <button
-                  type="button"
-                  onClick={() => speakResponse(message)}
-                  disabled={audioPlaying}
-                  className={`bg-eresq-navy text-white p-3 rounded-lg aspect-square ${
-                    audioPlaying ? 'opacity-50' : 'hover:bg-opacity-90'
-                  }`}
-                >
-                  {audioPlaying ? (
-                    <div className="w-5 h-5 relative">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-1 h-3 bg-white mx-0.5 animate-waveform"></div>
-                        <div className="w-1 h-4 bg-white mx-0.5 animate-waveform animation-delay-200"></div>
-                        <div className="w-1 h-2 bg-white mx-0.5 animate-waveform animation-delay-500"></div>
-                      </div>
-                    </div>
-                  ) : (
-                    <Mic size={20} />
-                  )}
-                </button>
-              )}
-            </div>
+          {/* Voice Input Button - Centered */}
+          <div className="flex flex-col items-center mt-6 mb-4">
+            <button
+              type="button"
+              onClick={toggleRecording}
+              className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                recording ? "bg-red-500 text-white animate-pulse" : "bg-eresq-navy text-white"
+              }`}
+            >
+              {recording ? <MicOff size={24} /> : <Mic size={24} />}
+            </button>
+            <p className="mt-2 text-sm text-gray-600">
+              {recording ? "Tap to stop recording" : "Tap to speak"}
+            </p>
+          </div>
+          
+          {/* Hidden submit button for form submission via Enter key */}
+          <form onSubmit={handleSubmit} className="hidden">
+            <button type="submit">Submit</button>
           </form>
+
+          {/* Submit button for image analysis */}
+          {selectedImage && (
+            <Button
+              type="button"
+              onClick={() => handleSubmit()}
+              disabled={isProcessing}
+              className={`w-full mt-4 bg-eresq-navy text-white p-3 rounded-lg hover:bg-opacity-90 flex items-center justify-center ${
+                isProcessing ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isProcessing ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Processing...</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Send size={16} />
+                  <span>Analyze Image</span>
+                </div>
+              )}
+            </Button>
+          )}
         </div>
 
-        {message && (
+        {/* Conversation History */}
+        {conversationHistory.length > 0 && (
           <div className="bg-white rounded-lg p-4 shadow-sm mt-4">
-            <h3 className="font-medium text-eresq-navy mb-2">AI Assessment:</h3>
-            <p className="text-gray-700">{message}</p>
+            <h3 className="font-medium text-eresq-navy mb-2">Conversation:</h3>
+            <div className="space-y-4">
+              {conversationHistory.map((msg, i) => (
+                <div 
+                  key={i} 
+                  className={`p-3 rounded-lg ${
+                    msg.role === 'user' 
+                      ? 'bg-blue-50 ml-12' 
+                      : 'bg-gray-50 mr-12'
+                  }`}
+                >
+                  <p className="text-sm font-semibold mb-1">
+                    {msg.role === 'user' ? 'You' : 'AI Assistant'}:
+                  </p>
+                  <p className="text-gray-700">{msg.content}</p>
+                  
+                  {msg.role === 'assistant' && (
+                    <button
+                      onClick={() => speakResponse(msg.content)}
+                      disabled={audioPlaying}
+                      className={`mt-2 text-xs flex items-center text-eresq-navy ${
+                        audioPlaying ? 'opacity-50' : ''
+                      }`}
+                    >
+                      {audioPlaying ? (
+                        <span className="flex items-center">
+                          <span className="w-3 h-3 relative flex justify-center mx-1">
+                            <span className="w-0.5 h-2 bg-eresq-navy mx-px animate-waveform"></span>
+                            <span className="w-0.5 h-3 bg-eresq-navy mx-px animate-waveform animation-delay-200"></span>
+                            <span className="w-0.5 h-1.5 bg-eresq-navy mx-px animate-waveform animation-delay-500"></span>
+                          </span>
+                          Playing...
+                        </span>
+                      ) : (
+                        <>
+                          <Mic size={12} className="mr-1" /> Listen
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            
+            {/* Speech button for last AI response */}
+            {conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'assistant' && (
+              <div className="flex justify-center mt-4">
+                <Button
+                  type="button"
+                  onClick={() => speakResponse(conversationHistory[conversationHistory.length - 1].content)}
+                  disabled={audioPlaying}
+                  variant="outline"
+                  className="flex items-center space-x-2"
+                >
+                  {audioPlaying ? (
+                    <>
+                      <span className="w-4 relative flex justify-center">
+                        <span className="w-0.5 h-2 bg-current mx-px animate-waveform"></span>
+                        <span className="w-0.5 h-3 bg-current mx-px animate-waveform animation-delay-200"></span>
+                        <span className="w-0.5 h-1.5 bg-current mx-px animate-waveform animation-delay-500"></span>
+                      </span>
+                      <span>Playing audio...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic size={16} />
+                      <span>Listen to response</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
       <BottomNavBar />
       
-      <style>{`
+      <style jsx>{`
         @keyframes waveform {
           0% { height: 3px; }
           50% { height: 12px; }

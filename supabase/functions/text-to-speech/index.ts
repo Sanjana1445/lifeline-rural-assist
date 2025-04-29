@@ -13,31 +13,26 @@ serve(async (req) => {
   }
 
   try {
-    const { text, language = "en" } = await req.json();
+    const { text, language = "english" } = await req.json();
     
     if (!text) {
       throw new Error("No text provided");
     }
     
-    // Map languages to voice settings
-    const languageVoiceMap: Record<string, { languageCode: string, name: string, ssmlGender: string }> = {
-      "en": { languageCode: "en-US", name: "en-US-Neural2-F", ssmlGender: "FEMALE" },
-      "hi": { languageCode: "hi-IN", name: "hi-IN-Neural2-A", ssmlGender: "FEMALE" },
-      "te": { languageCode: "te-IN", name: "te-IN-Standard-A", ssmlGender: "FEMALE" },
-      "ta": { languageCode: "ta-IN", name: "ta-IN-Standard-A", ssmlGender: "FEMALE" },
-      "kn": { languageCode: "kn-IN", name: "kn-IN-Standard-A", ssmlGender: "FEMALE" },
-      "mr": { languageCode: "mr-IN", name: "mr-IN-Standard-A", ssmlGender: "FEMALE" },
-      "english": { languageCode: "en-US", name: "en-US-Neural2-F", ssmlGender: "FEMALE" },
-      "hindi": { languageCode: "hi-IN", name: "hi-IN-Neural2-A", ssmlGender: "FEMALE" },
-      "telugu": { languageCode: "te-IN", name: "te-IN-Standard-A", ssmlGender: "FEMALE" },
-      "tamil": { languageCode: "ta-IN", name: "ta-IN-Standard-A", ssmlGender: "FEMALE" },
-      "kannada": { languageCode: "kn-IN", name: "kn-IN-Standard-A", ssmlGender: "FEMALE" },
-      "marathi": { languageCode: "mr-IN", name: "mr-IN-Standard-A", ssmlGender: "FEMALE" },
+    // Map languages to Google Cloud TTS language codes
+    const languageMap: Record<string, { languageCode: string, name: string }> = {
+      "english": { languageCode: "en-US", name: "en-US-Neural2-F" },
+      "hindi": { languageCode: "hi-IN", name: "hi-IN-Neural2-A" },
+      "tamil": { languageCode: "ta-IN", name: "ta-IN-Neural2-A" },
+      "telugu": { languageCode: "te-IN", name: "te-IN-Neural2-A" },
+      "kannada": { languageCode: "kn-IN", name: "kn-IN-Neural2-A" },
+      "marathi": { languageCode: "mr-IN", name: "mr-IN-Neural2-A" },
     };
     
-    const voiceSettings = languageVoiceMap[language.toLowerCase()] || languageVoiceMap["en"];
+    // Default to English if language not supported
+    const voiceConfig = languageMap[language.toLowerCase()] || languageMap["english"];
     
-    // Call Google Text-to-Speech API
+    // Call Google Cloud Text-to-Speech API
     const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
       method: "POST",
       headers: {
@@ -46,22 +41,28 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         input: { text },
-        voice: voiceSettings,
-        audioConfig: { audioEncoding: "MP3" },
+        voice: {
+          languageCode: voiceConfig.languageCode,
+          name: voiceConfig.name,
+        },
+        audioConfig: { 
+          audioEncoding: "MP3",
+          speakingRate: 0.95,
+          pitch: 0
+        },
       }),
     });
     
-    const data = await response.json();
-    
-    if (data.error) {
-      throw new Error(data.error.message || "Text-to-speech conversion failed");
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Text-to-Speech API error:", errorData);
+      throw new Error(errorData.error?.message || "Text-to-speech conversion failed");
     }
     
-    // Return the audio content as a data URL
+    const data = await response.json();
+    
     return new Response(
-      JSON.stringify({ 
-        audioUrl: `data:audio/mp3;base64,${data.audioContent}` 
-      }),
+      JSON.stringify({ audioBase64: data.audioContent }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }

@@ -27,6 +27,7 @@ const SOSAlert = () => {
   const [emergencyDescription, setEmergencyDescription] = useState("");
   const [showVoicePrompt, setShowVoicePrompt] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [emergencyId, setEmergencyId] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const navigate = useNavigate();
@@ -43,42 +44,70 @@ const SOSAlert = () => {
   useEffect(() => {
     // Load real responders from supabase if available
     const fetchResponders = async () => {
-      if (user && alertSent) {
+      if (user && alertSent && emergencyId) {
         try {
-          // Join emergency_responses with profiles table to get responder details
+          // Get emergency responses with responder profiles
           const { data, error } = await supabase
             .from('emergency_responses')
             .select(`
-              id,
+              id, 
               status,
-              profiles(id, full_name, frontline_type)
+              responder_id
             `)
-            .eq('emergency_id', user.id);
+            .eq('emergency_id', emergencyId);
 
           if (error) throw error;
           
           if (data && data.length > 0) {
-            // Transform the data to match our responders structure
-            const transformedResponders = data.map((item: any) => {
-              const profile = item.profiles;
-              const roleMap: Record<number, string> = {
-                1: 'Medical Officer',
-                2: 'ASHA Worker',
-                3: 'ANM',
-              };
-              
-              return {
-                id: item.id,
-                name: profile?.full_name || 'Unknown Responder',
-                role: profile?.frontline_type ? roleMap[profile.frontline_type] || 'Healthcare Worker' : 'Healthcare Worker',
-                status: item.status as "pending" | "accepted",
-                distance: "Calculating...", // This would come from a location service
-                phoneNumber: "+91 98765 43210", // This would come from profiles
-              };
-            });
+            // Get responder profiles for all emergency responses
+            const responderIds = data.map(item => item.responder_id);
             
-            setResponders(transformedResponders);
-            return;
+            const { data: profilesData, error: profilesError } = await supabase
+              .from('profiles')
+              .select(`
+                id, 
+                full_name, 
+                frontline_type,
+                phone
+              `)
+              .in('id', responderIds);
+              
+            if (profilesError) throw profilesError;
+            
+            if (profilesData && profilesData.length > 0) {
+              // Get frontline types to map type IDs to names
+              const { data: frontlineTypes, error: typesError } = await supabase
+                .from('frontline_types')
+                .select('*');
+                
+              if (typesError) throw typesError;
+              
+              const typeMap = frontlineTypes ? frontlineTypes.reduce((acc: Record<string, string>, type) => {
+                acc[type.id] = type.name;
+                return acc;
+              }, {}) : {};
+              
+              // Transform the data to match our responders structure
+              const transformedResponders = data.map(responseItem => {
+                const profile = profilesData.find(p => p.id === responseItem.responder_id);
+                
+                if (!profile) return null;
+                
+                return {
+                  id: responseItem.id,
+                  name: profile.full_name || 'Unknown Responder',
+                  role: profile.frontline_type && typeMap[profile.frontline_type] 
+                    ? typeMap[profile.frontline_type] 
+                    : 'Healthcare Worker',
+                  status: responseItem.status as "pending" | "accepted",
+                  distance: "Calculating...", // This would come from a location service
+                  phoneNumber: profile.phone || "+91 98765 43210",
+                };
+              }).filter(Boolean) as Responder[];
+              
+              setResponders(transformedResponders);
+              return;
+            }
           }
         } catch (error) {
           console.error('Error fetching responders:', error);
@@ -126,31 +155,40 @@ const SOSAlert = () => {
 
     fetchResponders();
 
-    // Simulate response updates
-    const simulateResponses = setTimeout(() => {
-      if (alertSent) {
-        setResponders((prev) =>
-          prev.map((responder) => {
-            if (responder.id === "3") {
-              return { ...responder, status: "accepted" };
-            }
-            return responder;
-          })
-        );
-      }
-    }, 5000);
-
-    return () => {
-      clearTimeout(simulateResponses);
-    };
-  }, [alertSent, user]);
+    // Subscribe to emergency_responses changes to get real-time updates
+    if (emergencyId) {
+      const subscription = supabase
+        .channel('any')
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'emergency_responses',
+          filter: `emergency_id=eq.${emergencyId}`
+        }, () => {
+          fetchResponders();
+        })
+        .subscribe();
+        
+      return () => {
+        supabase.removeChannel(subscription);
+      };
+    }
+  }, [alertSent, user, emergencyId]);
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       
       audioChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm'
+      });
       
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -180,9 +218,13 @@ const SOSAlert = () => {
       console.error('Error accessing microphone:', error);
       toast({
         title: "Microphone Error",
-        description: "Unable to access your microphone. Please check permissions.",
+        description: "Unable to access your microphone. Please check permissions and try again.",
         variant: "destructive",
       });
+      
+      // If mic access fails, allow user to skip voice input
+      setShowVoicePrompt(false);
+      setAlertSent(true);
     }
   };
 
@@ -244,17 +286,11 @@ const SOSAlert = () => {
         // Hide voice prompt and show emergency screen
         setShowVoicePrompt(false);
         
-        // Create emergency in database
-        if (user) {
-          const { error } = await supabase
-            .from('emergencies')
-            .insert({
-              patient_id: user.id,
-              description: shortDescription,
-              location: "User location", // In a real app, this would be GPS coordinates
-            });
-          
-          if (error) throw error;
+        // Create emergency in database and notify frontline workers
+        const emergencyRecord = await createEmergencyRecord(shortDescription || transcript);
+        if (emergencyRecord?.id) {
+          setEmergencyId(emergencyRecord.id);
+          await notifyFrontlineWorkers(emergencyRecord.id);
         }
         
         setAlertSent(true);
@@ -267,10 +303,91 @@ const SOSAlert = () => {
       console.error('Error processing voice recording:', error);
       toast({
         title: "Processing Error",
-        description: "There was an error processing your voice recording. Please try again.",
+        description: "There was an error processing your voice recording. Please try again or skip voice input.",
         variant: "destructive",
       });
       setIsProcessing(false);
+    }
+  };
+
+  const createEmergencyRecord = async (description: string) => {
+    try {
+      if (!user) {
+        console.warn("No user logged in, using simulated emergency record");
+        return { id: "simulated-emergency-id" };
+      }
+      
+      const { data, error } = await supabase
+        .from('emergencies')
+        .insert({
+          patient_id: user.id,
+          description: description,
+          location: "User location", // In a real app, this would be GPS coordinates
+        })
+        .select('id')
+        .single();
+      
+      if (error) {
+        console.error("Error creating emergency record:", error);
+        throw error;
+      }
+      
+      toast({
+        title: "Emergency Created",
+        description: "Your emergency has been recorded and help is on the way."
+      });
+      
+      return data;
+    } catch (error) {
+      console.error("Failed to create emergency record:", error);
+      return null;
+    }
+  };
+
+  const notifyFrontlineWorkers = async (emergencyId: string) => {
+    try {
+      if (!emergencyId) return;
+      
+      // Get nearby frontline workers
+      // In a real app, this would filter based on location, availability, etc.
+      const { data: frontlineWorkers, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_frontline_worker', true)
+        .limit(5);
+      
+      if (error) throw error;
+      
+      if (frontlineWorkers && frontlineWorkers.length > 0) {
+        // Create emergency response records for each worker
+        const responseRecords = frontlineWorkers.map(worker => ({
+          emergency_id: emergencyId,
+          responder_id: worker.id,
+          status: 'pending'
+        }));
+        
+        const { error: insertError } = await supabase
+          .from('emergency_responses')
+          .insert(responseRecords);
+          
+        if (insertError) throw insertError;
+        
+        toast({
+          title: "Responders Notified",
+          description: `${frontlineWorkers.length} frontline workers have been notified of your emergency.`
+        });
+        
+        return frontlineWorkers.length;
+      } else {
+        toast({
+          title: "No Responders Found",
+          description: "We couldn't find any available frontline workers. Using simulated responders.",
+        });
+        return 0;
+      }
+    } catch (error) {
+      console.error("Failed to notify frontline workers:", error);
+      return 0;
     }
   };
 
@@ -303,13 +420,12 @@ const SOSAlert = () => {
 
   const handleCancelEmergency = async () => {
     // Update emergency status in the database
-    if (user) {
+    if (user && emergencyId) {
       try {
         const { error } = await supabase
           .from('emergencies')
           .update({ status: 'cancelled' })
-          .eq('patient_id', user.id)
-          .eq('status', 'new');
+          .eq('id', emergencyId);
           
         if (error) throw error;
         
@@ -375,7 +491,14 @@ const SOSAlert = () => {
                 variant="outline"
                 onClick={() => {
                   setShowVoicePrompt(false);
-                  setAlertSent(true);
+                  // Create a default emergency
+                  createEmergencyRecord("Medical emergency reported").then(record => {
+                    if (record?.id) {
+                      setEmergencyId(record.id);
+                      notifyFrontlineWorkers(record.id);
+                      setAlertSent(true);
+                    }
+                  });
                 }} 
                 className="px-8 py-4 rounded-lg text-gray-700"
               >
