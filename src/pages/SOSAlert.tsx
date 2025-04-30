@@ -36,6 +36,9 @@ const SOSAlert = () => {
   const [textMessage, setTextMessage] = useState("");
   const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [detectedLanguage, setDetectedLanguage] = useState<string>("english");
+  const [noSpeechTimeout, setNoSpeechTimeout] = useState<number | null>(null);
+  const [waitingForVoiceInput, setWaitingForVoiceInput] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -47,14 +50,18 @@ const SOSAlert = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Cleanup function for progress interval
+  // Cleanup function for intervals and timers
   useEffect(() => {
     return () => {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
       }
+      
+      if (noSpeechTimeout) {
+        clearTimeout(noSpeechTimeout);
+      }
     };
-  }, []);
+  }, [noSpeechTimeout]);
 
   useEffect(() => {
     if (showVoicePrompt) {
@@ -71,7 +78,7 @@ const SOSAlert = () => {
   }, [conversationHistory]);
 
   useEffect(() => {
-    // Load real responders from supabase if available
+    // Load responders from supabase if available
     const fetchResponders = async () => {
       if (user && alertSent && emergencyId) {
         try {
@@ -194,14 +201,18 @@ const SOSAlert = () => {
     if (emergencyId) {
       const subscription = supabase
         .channel('emergency-responses-changes')
-        .on('postgres_changes', {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'emergency_responses',
-          filter: `emergency_id=eq.${emergencyId}`
-        }, () => {
-          fetchResponders();
-        })
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'emergency_responses',
+            filter: `emergency_id=eq.${emergencyId}`
+          },
+          () => {
+            fetchResponders();
+          }
+        )
         .subscribe();
         
       return () => {
@@ -245,12 +256,39 @@ const SOSAlert = () => {
       mediaRecorder.start();
       setRecording(true);
       
-      // Stop recording after 10 seconds automatically
+      // Set timeout for 5 seconds of no speech - automatically send emergency
+      const timeout = window.setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          console.log("No speech detected for 5 seconds, sending emergency alert automatically");
+          stopRecording();
+          
+          // Send an automatic emergency alert
+          setShowVoicePrompt(false);
+          createEmergencyRecord("Emergency reported - No voice details provided").then(record => {
+            if (record?.id) {
+              setEmergencyId(record.id);
+              notifyFrontlineWorkers(record.id);
+            }
+            setAlertSent(true);
+            // Add a system message indicating the automatic alert
+            setConversationHistory([
+              {
+                role: 'assistant', 
+                content: "I've detected an emergency situation with no voice input. An alert has been sent automatically. Help is on the way. I'm here to assist you while help arrives. Can you type or try to speak to provide more information about your emergency?"
+              }
+            ]);
+          });
+        }
+      }, 5000);
+      
+      setNoSpeechTimeout(timeout);
+      
+      // Stop recording after 15 seconds maximum (in case they do provide speech)
       setTimeout(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
           stopRecording();
         }
-      }, 10000);
+      }, 15000);
     } catch (error) {
       console.error('Error accessing microphone:', error);
       toast({
@@ -262,10 +300,23 @@ const SOSAlert = () => {
       // If mic access fails, allow user to skip voice input
       setShowVoicePrompt(false);
       setAlertSent(true);
+      // Create a default emergency
+      createEmergencyRecord("Medical emergency - No microphone access").then(record => {
+        if (record?.id) {
+          setEmergencyId(record.id);
+          notifyFrontlineWorkers(record.id);
+        }
+      });
     }
   };
 
   const stopRecording = () => {
+    // Clear the no-speech timeout
+    if (noSpeechTimeout) {
+      clearTimeout(noSpeechTimeout);
+      setNoSpeechTimeout(null);
+    }
+    
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       setRecording(false);
@@ -329,6 +380,10 @@ const SOSAlert = () => {
       setTranscription(transcript);
       console.log("Received transcript:", transcript);
       
+      // Update the detected language
+      const language = data.language?.toLowerCase() || "english";
+      setDetectedLanguage(language);
+      
       // Process the transcript with Gemini to extract emergency details
       const geminiResponse = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
         method: 'POST',
@@ -337,6 +392,7 @@ const SOSAlert = () => {
         },
         body: JSON.stringify({
           prompt: `Extract a brief emergency description (less than 70 characters) from this transcript: "${transcript}". Only return the short description, nothing else.`,
+          language: language
         }),
       });
       
@@ -404,8 +460,14 @@ const SOSAlert = () => {
       // Add a fallback conversation to ensure the AI provides some guidance
       setConversationHistory([
         {role: 'user', content: "I have a medical emergency"},
-        {role: 'assistant', content: "I'll help you through this emergency. First, try to remain calm. Can you briefly tell me what's happening?"}
+        {role: 'assistant', content: "I'll help you through this emergency. First, try to remain calm. Can you briefly tell me what's happening so I can provide specific guidance while help is on the way?"}
       ]);
+      
+      // Speak the assistant's response
+      speakResponse("I'll help you through this emergency. First, try to remain calm. Can you briefly tell me what's happening so I can provide specific guidance while help is on the way?");
+      
+      // Set up for next voice input
+      setWaitingForVoiceInput(true);
     } finally {
       setIsProcessing(false);
       // Ensure progress is reset
@@ -517,7 +579,8 @@ const SOSAlert = () => {
         body: JSON.stringify({
           prompt: `Based on this emergency description: "${transcript}", provide brief, clear first aid or emergency instructions that the person should follow until medical help arrives. Keep it short, simple, and actionable.`,
           isEmergency: true,
-          emergency_description: transcript
+          emergency_description: transcript,
+          language: detectedLanguage
         }),
       });
       
@@ -545,6 +608,9 @@ const SOSAlert = () => {
       // Convert to speech
       speakResponse(data.text);
       
+      // Set waiting for voice input after AI speaks
+      setWaitingForVoiceInput(true);
+      
     } catch (error) {
       console.error('Error getting emergency guidance:', error);
       
@@ -557,6 +623,7 @@ const SOSAlert = () => {
       }]);
       
       speakResponse(fallbackGuidance);
+      setWaitingForVoiceInput(true);
     }
   };
   
@@ -583,7 +650,8 @@ const SOSAlert = () => {
           prompt: userMessage,
           history: conversationHistory,
           isEmergency: true,
-          emergency_description: emergencyDescription
+          emergency_description: emergencyDescription,
+          language: detectedLanguage
         }),
       });
       
@@ -632,6 +700,218 @@ const SOSAlert = () => {
     }
   };
   
+  // Function to handle voice input continuation
+  const handleVoiceInput = () => {
+    if (waitingForVoiceInput && !recording && !isProcessing && !audioPlaying) {
+      startVoiceRecording();
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    // Clear the waiting state
+    setWaitingForVoiceInput(false);
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
+      });
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { 
+          type: mediaRecorder.mimeType 
+        });
+        
+        processConversationVoice(audioBlob);
+      };
+      
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setRecording(true);
+      
+      // Stop recording after 10 seconds automatically
+      setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          stopVoiceRecording();
+        }
+      }, 10000);
+    } catch (error) {
+      console.error('Error accessing microphone for conversation:', error);
+      toast({
+        title: "Microphone Error",
+        description: "Unable to access your microphone for conversation. Please try text input instead.",
+        variant: "destructive",
+      });
+      setWaitingForVoiceInput(false);
+    }
+  };
+  
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setRecording(false);
+      
+      // Stop all audio tracks
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+  };
+  
+  const processConversationVoice = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    
+    // Progress animation
+    setProcessingProgress(0);
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    
+    progressIntervalRef.current = window.setInterval(() => {
+      setProcessingProgress(prev => {
+        const newProgress = prev + 10;
+        if (newProgress >= 95) {
+          clearInterval(progressIntervalRef.current!);
+          return 95;
+        }
+        return newProgress;
+      });
+    }, 200);
+    
+    try {
+      // Convert the audio blob to base64
+      const base64Audio = await blobToBase64(audioBlob);
+      
+      // Send to our voice-to-text function
+      const response = await fetch(`${window.location.origin}/functions/v1/voice-to-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audioData: base64Audio }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Voice-to-text API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from voice-to-text service");
+      }
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      const transcript = data.transcript || '';
+      
+      if (!transcript || transcript.trim().length === 0) {
+        throw new Error("No speech detected");
+      }
+      
+      // Add user message to conversation
+      setConversationHistory(prev => [...prev, {
+        role: 'user',
+        content: transcript
+      }]);
+      
+      // Use Gemini to respond
+      await handleGeminiConversation(transcript);
+      
+    } catch (error) {
+      console.error('Error processing voice for conversation:', error);
+      toast({
+        title: "Voice Processing Error",
+        description: "There was an error understanding your voice. Please try again or use text input.",
+        variant: "destructive",
+      });
+      
+      // Re-enable voice input
+      setWaitingForVoiceInput(true);
+    } finally {
+      setIsProcessing(false);
+      
+      // Ensure progress is reset
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        setProcessingProgress(100);
+      }
+    }
+  };
+  
+  const handleGeminiConversation = async (message: string) => {
+    try {
+      // Call Gemini
+      const response = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: message,
+          history: conversationHistory,
+          isEmergency: true,
+          emergency_description: emergencyDescription,
+          language: detectedLanguage
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error: ${response.status} ${errorText}`);
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid response from Gemini service");
+      }
+      
+      if (data.error) throw new Error(data.error);
+      
+      // Add AI response to conversation history
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: data.text
+      }]);
+      
+      // Speak the response
+      speakResponse(data.text);
+      
+    } catch (error) {
+      console.error('Error in conversation:', error);
+      
+      // Add fallback response
+      const fallbackResponse = "I'm sorry, I couldn't process your message. While we wait for help, please try to stay calm and follow any medical instructions you've been given previously.";
+      
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: fallbackResponse
+      }]);
+      
+      speakResponse(fallbackResponse);
+    }
+  };
+  
   const speakResponse = async (text: string) => {
     try {
       // Send text to our text-to-speech function
@@ -642,7 +922,7 @@ const SOSAlert = () => {
         },
         body: JSON.stringify({ 
           text, 
-          language: "english" 
+          language: detectedLanguage 
         }),
       });
       
@@ -674,14 +954,20 @@ const SOSAlert = () => {
           
           audioRef.current.onended = () => {
             setAudioPlaying(false);
+            // Automatically prompt for next voice input after audio finishes
+            setWaitingForVoiceInput(true);
           };
         } catch (playError) {
           console.error("Error playing audio:", playError);
           setAudioPlaying(false);
+          // If we can't play audio, still prompt for next input
+          setWaitingForVoiceInput(true);
         }
       }
     } catch (error) {
       console.error('Error with text-to-speech:', error);
+      // Even if TTS fails, prompt for next input
+      setWaitingForVoiceInput(true);
     }
   };
 
@@ -740,6 +1026,12 @@ const SOSAlert = () => {
               : "Tap the microphone to start describing your emergency situation."}
           </p>
           
+          {recording && (
+            <div className="text-center text-red-600 animate-pulse mb-4">
+              <p>If no voice is detected in 5 seconds, an emergency alert will be automatically sent</p>
+            </div>
+          )}
+          
           {isProcessing ? (
             <div className="w-full max-w-md space-y-2">
               <div className="flex items-center space-x-2">
@@ -768,6 +1060,15 @@ const SOSAlert = () => {
                       setEmergencyId(record.id);
                       notifyFrontlineWorkers(record.id);
                       setAlertSent(true);
+
+                      // Add initial AI guidance
+                      setConversationHistory([{
+                        role: 'assistant',
+                        content: "I'm here to help with your emergency. Help is on the way. Can you tell me what's happening so I can provide specific guidance?"
+                      }]);
+
+                      // Speak the initial guidance
+                      speakResponse("I'm here to help with your emergency. Help is on the way. Can you tell me what's happening so I can provide specific guidance?");
                     }
                   });
                 }} 
@@ -882,6 +1183,30 @@ const SOSAlert = () => {
                 </div>
               </div>
             )}
+            
+            {/* Voice input indicator */}
+            {waitingForVoiceInput && !recording && !isProcessing && (
+              <div 
+                className="flex justify-center space-x-2 my-2 p-2 bg-blue-50 border border-blue-100 rounded-lg cursor-pointer"
+                onClick={handleVoiceInput}
+              >
+                <Mic size={16} className="text-blue-500 animate-pulse" />
+                <span className="text-blue-600 text-sm">Tap here to speak</span>
+              </div>
+            )}
+            
+            {recording && (
+              <div className="flex justify-center space-x-2 my-2 p-2 bg-red-50 border border-red-100 rounded-lg">
+                <MicOff size={16} className="text-red-500 animate-pulse" onClick={stopVoiceRecording} />
+                <span className="text-red-600 text-sm">Recording... tap to stop</span>
+              </div>
+            )}
+            
+            {isProcessing && (
+              <div className="flex justify-center my-2">
+                <Progress value={processingProgress} className="w-3/4 h-2" />
+              </div>
+            )}
           </div>
           
           <form onSubmit={handleChatSubmit} className="flex items-end space-x-2">
@@ -952,8 +1277,7 @@ const SOSAlert = () => {
       {audioElement}
       <BottomNavBar />
       
-      <style>
-        {`
+      <style>{`
         @keyframes waveform {
           0% { height: 3px; }
           50% { height: 12px; }
@@ -968,8 +1292,7 @@ const SOSAlert = () => {
         .animation-delay-500 {
           animation-delay: 0.5s;
         }
-        `}
-      </style>
+      `}</style>
     </div>
   );
 };

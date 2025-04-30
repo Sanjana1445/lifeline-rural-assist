@@ -6,6 +6,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const debugLog = (message: string, data?: any) => {
+  if (data) {
+    console.log(`[TEXT-TO-SPEECH] ${message}:`, JSON.stringify(data).substring(0, 200));
+  } else {
+    console.log(`[TEXT-TO-SPEECH] ${message}`);
+  }
+};
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -15,8 +23,17 @@ serve(async (req) => {
   try {
     const { text, language = "english" } = await req.json();
     
+    debugLog("Received request", { textLength: text?.length, language });
+    
     if (!text) {
       throw new Error("No text provided");
+    }
+    
+    // Get the Google Cloud API key
+    const apiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY");
+    if (!apiKey) {
+      debugLog("Missing Google Cloud API key");
+      throw new Error("Google Cloud API key not configured");
     }
     
     // Map languages to Google Cloud TTS language codes
@@ -32,47 +49,63 @@ serve(async (req) => {
     // Default to English if language not supported
     const voiceConfig = languageMap[language.toLowerCase()] || languageMap["english"];
     
+    debugLog("Using voice config", voiceConfig);
+    
     // Call Google Cloud Text-to-Speech API
-    const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("GOOGLE_API_TOKEN")}`,
-      },
-      body: JSON.stringify({
-        input: { text },
-        voice: {
-          languageCode: voiceConfig.languageCode,
-          name: voiceConfig.name,
+    try {
+      const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + apiKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        audioConfig: { 
-          audioEncoding: "MP3",
-          speakingRate: 0.95,
-          pitch: 0
-        },
-      }),
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Text-to-Speech API error:", errorData);
-      throw new Error(errorData.error?.message || "Text-to-speech conversion failed");
-    }
-    
-    const data = await response.json();
-    
-    return new Response(
-      JSON.stringify({ audioBase64: data.audioContent }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: { text },
+          voice: {
+            languageCode: voiceConfig.languageCode,
+            name: voiceConfig.name,
+          },
+          audioConfig: { 
+            audioEncoding: "MP3",
+            speakingRate: 0.95,
+            pitch: 0,
+            // Use lower audio quality for bandwidth optimization in rural areas
+            effectsProfileId: ["telephony-class-application"]
+          },
+        }),
+      });
+      
+      debugLog("TTS API response status", { status: response.status });
+      
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = { error: "Could not read error response" };
+        }
+        
+        debugLog("Text-to-Speech API error:", errorData);
+        throw new Error(errorData.error?.message || "Text-to-speech conversion failed");
       }
-    );
+      
+      const data = await response.json();
+      
+      return new Response(
+        JSON.stringify({ audioBase64: data.audioContent }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    } catch (apiError) {
+      debugLog("Error calling Text-to-Speech API", apiError);
+      throw apiError;
+    }
   } catch (error) {
-    console.error("Error in text-to-speech function:", error);
+    debugLog("Error in text-to-speech function:", error);
     return new Response(
       JSON.stringify({ error: error.message || "Failed to convert text to speech" }),
       {
-        status: 500,
+        status: 200, // Return 200 to prevent frontend crashes
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

@@ -7,7 +7,6 @@ import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { supabase } from "@/integrations/supabase/client";
 
 const Triage = () => {
   const [recording, setRecording] = useState(false);
@@ -19,6 +18,9 @@ const Triage = () => {
   const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [waitingForVoiceInput, setWaitingForVoiceInput] = useState(false);
+  const [initialPromptSent, setInitialPromptSent] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [recordingTimeout, setRecordingTimeout] = useState<number | null>(null);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -49,11 +51,19 @@ const Triage = () => {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
       }
+
+      // Clear recording timeout
+      if (recordingTimeout) {
+        window.clearTimeout(recordingTimeout);
+      }
     };
-  }, []);
+  }, [recordingTimeout]);
 
   const startCamera = async () => {
     try {
+      // Reset any previous camera errors
+      setCameraError(null);
+      
       // Request camera permissions explicitly with proper constraints
       const constraints = { 
         video: { 
@@ -64,28 +74,59 @@ const Triage = () => {
       };
       
       console.log("Requesting camera access with constraints:", constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        try {
-          await videoRef.current.play();
-          setCameraActive(true);
+      // Try to access the camera
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then((stream) => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.onloadedmetadata = () => {
+              videoRef.current?.play()
+                .then(() => {
+                  setCameraActive(true);
+                  toast({
+                    title: "Camera active",
+                    description: "Tap the center button to capture an image",
+                  });
+                })
+                .catch((playError) => {
+                  console.error('Video play error:', playError);
+                  setCameraError("Failed to start video preview");
+                  throw new Error('Failed to start video preview');
+                });
+            };
+          }
+        })
+        .catch((err) => {
+          console.error('Error accessing camera:', err);
+          
+          // Show a more specific error message based on the error
+          let errorMessage = "Unable to access your camera.";
+          
+          if (err.name === 'NotAllowedError') {
+            errorMessage += " You denied camera access. Please check permissions and try again.";
+          } else if (err.name === 'NotFoundError') {
+            errorMessage += " No camera found on your device.";
+          } else if (err.name === 'NotReadableError') {
+            errorMessage += " Your camera might be in use by another application.";
+          } else {
+            errorMessage += " Please check permissions and try again.";
+          }
+          
+          setCameraError(errorMessage);
           
           toast({
-            title: "Camera active",
-            description: "Tap the center button to capture an image",
+            title: "Camera Error",
+            description: errorMessage,
+            variant: "destructive",
           });
-        } catch (playError) {
-          console.error('Video play error:', playError);
-          throw new Error('Failed to start video preview');
-        }
-      }
+        });
     } catch (error) {
-      console.error('Error accessing camera:', error);
+      console.error('General camera error:', error);
+      setCameraError("Failed to initialize camera. Please try again.");
       toast({
         title: "Camera Error",
-        description: "Unable to access your camera. Please check permissions and try again.",
+        description: "Unable to access your camera due to a system error. Please try again.",
         variant: "destructive",
       });
     }
@@ -185,11 +226,14 @@ const Triage = () => {
       });
       
       // Stop recording after 10 seconds automatically
-      setTimeout(() => {
+      const timeout = window.setTimeout(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
           stopVoiceRecording();
         }
       }, 10000);
+      
+      setRecordingTimeout(timeout);
+      
     } catch (error) {
       console.error('Error accessing microphone:', error);
       toast({
@@ -201,6 +245,12 @@ const Triage = () => {
   };
 
   const stopVoiceRecording = () => {
+    // Clear the recording timeout
+    if (recordingTimeout) {
+      window.clearTimeout(recordingTimeout);
+      setRecordingTimeout(null);
+    }
+    
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       setRecording(false);
@@ -297,6 +347,9 @@ const Triage = () => {
       // Add fallback user message to conversation if processing failed but we have conversation history
       if (conversationHistory.length > 0) {
         await sendToGemini("I'm having trouble explaining my symptoms. Can you help guide me through some common questions?");
+      } else if (selectedImage) {
+        // If we have an image but the voice input failed, still try to analyze the image
+        await sendInitialImagePrompt();
       }
     } finally {
       setIsProcessing(false);
@@ -309,8 +362,33 @@ const Triage = () => {
     }
   };
 
+  const sendInitialImagePrompt = async () => {
+    // Don't send duplicate initial prompts
+    if (initialPromptSent) return;
+    
+    setInitialPromptSent(true);
+    
+    const initialPrompt = "Please analyze this medical image and tell me what you see. What condition might it show? Please provide a detailed medical assessment.";
+    
+    // Add user message to conversation
+    setConversationHistory(prev => [
+      ...prev, 
+      { role: 'user', content: initialPrompt }
+    ]);
+    
+    await sendToGemini(initialPrompt);
+  };
+
   const sendToGemini = async (message: string) => {
     try {
+      // If this is the first interaction and we have an image, send an image analysis prompt
+      const isFirstInteraction = conversationHistory.length <= 1;
+      const hasImage = !!selectedImage;
+      
+      if (isFirstInteraction && hasImage && !initialPromptSent) {
+        setInitialPromptSent(true);
+      }
+      
       // Send to Gemini API through our edge function
       const response = await fetch(`${window.location.origin}/functions/v1/gemini-chat`, {
         method: 'POST',
@@ -356,7 +434,7 @@ const Triage = () => {
       console.error('Error processing query:', error);
       
       // Add fallback AI response if the Gemini API call fails
-      const fallbackMessage = "I'm sorry, I'm having trouble processing your request right now. Could you please try again or describe your symptoms differently?";
+      const fallbackMessage = "I'm sorry, I'm having trouble processing your medical question right now. Could you please try again or describe your symptoms differently?";
       
       setConversationHistory(prev => [
         ...prev, 
@@ -380,6 +458,7 @@ const Triage = () => {
       reader.onload = (event) => {
         if (event.target?.result) {
           setSelectedImage(event.target.result as string);
+          setInitialPromptSent(false);
           toast({
             title: "Image Uploaded",
             description: "You can now speak to analyze the image",
@@ -435,10 +514,20 @@ const Triage = () => {
           
           audioRef.current.onended = () => {
             setAudioPlaying(false);
+            
+            // Automatically prompt for next voice input after audio finishes
+            // but only if we already have a conversation going
+            if (conversationHistory.length >= 2) {
+              setWaitingForVoiceInput(true);
+            }
           };
         } catch (playError) {
           console.error("Error playing audio:", playError);
           setAudioPlaying(false);
+          // If we can't play audio, still prompt for next input
+          if (conversationHistory.length >= 2) {
+            setWaitingForVoiceInput(true);
+          }
         }
       }
     } catch (error) {
@@ -448,6 +537,10 @@ const Triage = () => {
         description: "There was an error converting text to speech.",
         variant: "destructive",
       });
+      // Even if TTS fails, prompt for next input
+      if (conversationHistory.length >= 2) {
+        setWaitingForVoiceInput(true);
+      }
     }
   };
 
@@ -513,15 +606,26 @@ const Triage = () => {
                   </button>
                 </div>
               ) : (
-                <button 
-                  onClick={startCamera}
-                  className="w-full h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
-                >
-                  <Camera size={48} className="mb-2 text-gray-400" />
-                  <p className="text-center text-gray-500">
-                    Tap to take a photo
-                  </p>
-                </button>
+                <>
+                  <button 
+                    onClick={startCamera}
+                    className="w-full h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
+                  >
+                    <Camera size={48} className="mb-2 text-gray-400" />
+                    <p className="text-center text-gray-500">
+                      Tap to take a photo
+                    </p>
+                  </button>
+                  
+                  {cameraError && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm text-red-600">{cameraError}</p>
+                      <p className="text-xs text-red-500 mt-1">
+                        You can still use the upload button below or just speak to describe your symptoms.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Upload Option */}
@@ -573,6 +677,16 @@ const Triage = () => {
                   <div className="mt-2 text-xs text-blue-600 animate-pulse">
                     Waiting for your voice input...
                   </div>
+                )}
+                {selectedImage && !initialPromptSent && !isProcessing && !recording && !waitingForVoiceInput && (
+                  <Button
+                    onClick={() => sendInitialImagePrompt()}
+                    className="mt-2 text-xs"
+                    variant="outline"
+                    size="sm"
+                  >
+                    Analyze this image
+                  </Button>
                 )}
               </>
             )}
@@ -643,7 +757,7 @@ const Triage = () => {
             </div>
             
             {/* Button to add more details */}
-            {conversationHistory.length > 0 && !isProcessing && !recording && (
+            {conversationHistory.length > 0 && !isProcessing && !recording && !waitingForVoiceInput && (
               <div className="flex justify-center mt-4">
                 <Button
                   type="button"

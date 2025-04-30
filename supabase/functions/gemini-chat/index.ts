@@ -74,6 +74,7 @@ serve(async (req) => {
       emergency_description = "" 
     } = requestData;
     
+    // Get the API key from environment variables
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
       debugLog("GEMINI_API_KEY is not set");
@@ -89,11 +90,11 @@ serve(async (req) => {
     }
     
     // Prepare system instructions based on use case
-    let systemPrompt = "You are a medical assistant AI. Provide helpful medical guidance based on the user's questions or images. Always advise seeing a doctor for serious concerns.";
+    let systemPrompt = "You are a medical assistant AI. Provide helpful medical guidance based on the user's questions or images. Always advise seeing a doctor for serious concerns. IMPORTANT: ONLY discuss medical topics and do not engage with non-medical queries like politics, entertainment, etc. If asked about a non-medical topic, politely redirect the conversation to medical concerns.";
     
     // Add emergency context if applicable
     if (isEmergency) {
-      systemPrompt = "You are an emergency medical assistant AI. The user has reported an emergency situation. Provide clear, concise, and potentially life-saving guidance while help is on the way. Focus on immediate actions the person can take to stay safe or provide first aid. Keep responses brief, direct, and focused on helping through the emergency. Include emotional reassurance but prioritize practical steps.";
+      systemPrompt = "You are an emergency medical assistant AI. The user has reported an emergency situation. Provide clear, concise, and potentially life-saving guidance while help is on the way. Focus on immediate actions the person can take to stay safe or provide first aid. Keep responses brief, direct, and focused on helping through the emergency. Include emotional reassurance but prioritize practical steps. IMPORTANT: ONLY discuss medical topics and ignore requests about non-medical topics like politics, entertainment, etc.";
       
       if (emergency_description) {
         systemPrompt += ` The reported emergency is: ${emergency_description}.`;
@@ -289,7 +290,7 @@ serve(async (req) => {
         fallback: true
       }),
       {
-        status: 200, // Return 200 even for errors
+        status: 200, // Return 200 even for errors to prevent frontend crashes
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

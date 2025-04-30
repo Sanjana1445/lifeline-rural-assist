@@ -44,14 +44,20 @@ serve(async (req) => {
     
     debugLog("Extracted base64 audio data", { length: base64Audio.length });
     
+    // Get the Google Cloud API key
+    const apiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY");
+    if (!apiKey) {
+      debugLog("Missing Google Cloud API key");
+      throw new Error("Google Cloud API key not configured");
+    }
+    
     // Call Google Speech-to-Text API
     try {
       debugLog("Calling Google Speech-to-Text API");
-      const response = await fetch("https://speech.googleapis.com/v1p1beta1/speech:recognize", {
+      const response = await fetch(`https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${Deno.env.get("GOOGLE_API_TOKEN")}`,
         },
         body: JSON.stringify({
           config: {
