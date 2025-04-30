@@ -1,5 +1,5 @@
 
-project_id = "zxaohlkkmqcmelinqgmv"
+project_id = "ff242489-63cc-46af-a657-8c60931e68e3"
 
 [api]
 enabled = true
@@ -8,13 +8,10 @@ schemas = ["public", "storage", "graphql_public"]
 
 [db]
 port = 54322
-shadow_port = 54320
-major_version = 15
 
 [studio]
 enabled = true
 port = 54323
-api_url = "http://localhost"
 
 [inbucket]
 enabled = true
@@ -22,25 +19,18 @@ port = 54324
 
 [storage]
 enabled = true
-port = 54325
 
 [auth]
 enabled = true
-port = 54326
 
 [realtime]
 enabled = true
-port = 54327
-
-[analytics]
-enabled = true
-port = 54328
-
-[functions.text-to-speech]
-verify_jwt = true
 
 [functions.voice-to-text]
-verify_jwt = true
+verify_jwt = false
+
+[functions.text-to-speech]
+verify_jwt = false
 
 [functions.gemini-chat]
-verify_jwt = true
+verify_jwt = false

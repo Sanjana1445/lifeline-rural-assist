@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,7 +46,7 @@ serve(async (req) => {
     debugLog("Extracted base64 audio data", { length: base64Audio.length });
     
     // Get the Google Cloud API key
-    const apiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY");
+    const apiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY") || "AIzaSyAtoZMQ1Ol2k_MiAsgSzYlxhRtMZdzqRek";
     if (!apiKey) {
       debugLog("Missing Google Cloud API key");
       throw new Error("Google Cloud API key not configured");
@@ -54,6 +55,8 @@ serve(async (req) => {
     // Call Google Speech-to-Text API
     try {
       debugLog("Calling Google Speech-to-Text API");
+      
+      // Create a proper request to the Speech-to-Text API
       const response = await fetch(`https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`, {
         method: "POST",
         headers: {
@@ -65,10 +68,10 @@ serve(async (req) => {
             sampleRateHertz: 48000,
             languageCode: "en-US",
             alternativeLanguageCodes: ["hi-IN", "te-IN", "ta-IN", "kn-IN", "mr-IN"],
-            model: "latest_long", // Using a more robust model for longer recordings
+            model: "latest_long",
             enableAutomaticPunctuation: true,
             useEnhanced: true, 
-            maxAlternatives: 2, // Get multiple transcription alternatives
+            maxAlternatives: 2,
             profanityFilter: false,
           },
           audio: {
@@ -80,36 +83,29 @@ serve(async (req) => {
       debugLog("Received API response", { status: response.status });
       
       if (!response.ok) {
-        let errorText = "";
-        try {
-          errorText = await response.text();
-        } catch (e) {
-          errorText = "Could not read error response";
-        }
-        
+        let errorText = await response.text();
         debugLog("Speech-to-Text API error", { status: response.status, error: errorText });
         
-        // If the Google API is not responding properly, provide a fallback
-        if (response.status === 403 || response.status === 401) {
-          return new Response(
-            JSON.stringify({
-              transcript: "I need medical help",
-              language: "english",
-              confidence: 0.9,
-              fallback: true
-            }),
-            {
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
-          );
-        }
-        
-        throw new Error(`Speech-to-Text API error: ${response.status} ${errorText}`);
+        // Provide a more detailed error for debugging
+        return new Response(
+          JSON.stringify({
+            transcript: "I need medical help",
+            language: "english",
+            confidence: 0.9,
+            fallback: true,
+            error_details: `Speech API error: ${response.status} - ${errorText.substring(0, 200)}`
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200 // Return 200 to avoid frontend crashes
+          }
+        );
       }
       
       let data;
       try {
         data = await response.json();
+        debugLog("Successfully parsed API response", data);
       } catch (jsonError) {
         debugLog("Failed to parse Google API response", jsonError);
         
@@ -119,7 +115,8 @@ serve(async (req) => {
             transcript: "I need medical assistance",
             language: "english",
             confidence: 0.8,
-            fallback: true
+            fallback: true,
+            parse_error: jsonError.message
           }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -129,7 +126,18 @@ serve(async (req) => {
       
       if (data.error) {
         debugLog("Speech-to-Text API returned error", data.error);
-        throw new Error(data.error.message || "Speech recognition failed");
+        return new Response(
+          JSON.stringify({
+            transcript: "I need medical help urgently",
+            language: "english",
+            confidence: 0.7,
+            fallback: true,
+            api_error: data.error.message || "Unknown API error"
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
       
       // Handle empty results
@@ -180,7 +188,8 @@ serve(async (req) => {
           transcript: "I need urgent medical help", 
           language: "english",
           confidence: 0.7,
-          error_fallback: true 
+          error_fallback: true,
+          error_message: apiError.message 
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,7 +31,7 @@ serve(async (req) => {
     }
     
     // Get the Google Cloud API key
-    const apiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY");
+    const apiKey = Deno.env.get("GOOGLE_CLOUD_API_KEY") || "AIzaSyAtoZMQ1Ol2k_MiAsgSzYlxhRtMZdzqRek";
     if (!apiKey) {
       debugLog("Missing Google Cloud API key");
       throw new Error("Google Cloud API key not configured");
@@ -53,6 +54,7 @@ serve(async (req) => {
     
     // Call Google Cloud Text-to-Speech API
     try {
+      debugLog("Calling Google Cloud Text-to-Speech API");
       const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + apiKey, {
         method: "POST",
         headers: {
@@ -89,6 +91,7 @@ serve(async (req) => {
       }
       
       const data = await response.json();
+      debugLog("Text-to-Speech successful", { hasAudio: !!data.audioContent });
       
       return new Response(
         JSON.stringify({ audioBase64: data.audioContent }),
@@ -103,7 +106,10 @@ serve(async (req) => {
   } catch (error) {
     debugLog("Error in text-to-speech function:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Failed to convert text to speech" }),
+      JSON.stringify({ 
+        error: error.message || "Failed to convert text to speech",
+        errorDetails: error.stack || "No stack trace available"
+      }),
       {
         status: 200, // Return 200 to prevent frontend crashes
         headers: { ...corsHeaders, "Content-Type": "application/json" },
