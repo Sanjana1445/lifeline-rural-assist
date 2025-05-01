@@ -1,6 +1,6 @@
 
 import { useState, useRef } from "react";
-import { ArrowLeft, Upload, Mic, Camera } from "lucide-react";
+import { ArrowLeft, Upload, Camera } from "lucide-react";
 import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
@@ -120,7 +120,7 @@ const Triage = () => {
 
           toast({
             title: "Image captured",
-            description: "Image captured successfully. Voice features coming soon.",
+            description: "Image captured successfully. You can now use the AI assistant below.",
           });
           
         } catch (e) {
@@ -144,7 +144,7 @@ const Triage = () => {
           setSelectedImage(event.target.result as string);
           toast({
             title: "Image Uploaded",
-            description: "Image uploaded successfully. Voice features coming soon.",
+            description: "Image uploaded successfully. You can now use the AI assistant below.",
           });
         }
       };
@@ -165,7 +165,7 @@ const Triage = () => {
 
         <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
           <p className="text-gray-600 mb-4">
-            Take a photo or upload an image of your symptoms for AI analysis. Voice features are coming soon.
+            Take a photo or upload an image of your symptoms for AI analysis. Then use the voice assistant below to get help.
           </p>
 
           {/* Camera View */}
@@ -244,34 +244,14 @@ const Triage = () => {
               </label>
             </div>
           )}
-
-          {/* Voice Input Button - Centered */}
-          <div className="flex flex-col items-center mt-6 mb-4">
-            <Button
-              type="button"
-              disabled={true}
-              className="bg-gray-300 text-gray-700"
-              onClick={() => toast({
-                title: "Coming Soon",
-                description: "Voice features will be available soon",
-              })}
-            >
-              <Mic size={16} className="mr-2" />
-              Voice features coming soon
-            </Button>
-            <p className="mt-2 text-xs text-gray-500">
-              We are rebuilding the voice features to improve their functionality
-            </p>
-          </div>
         </div>
 
-        {/* Empty conversation history placeholder */}
+        {/* ElevenLabs Convai Widget */}
         <div className="bg-white rounded-lg p-4 shadow-sm mt-4">
-          <h3 className="font-medium text-eresq-navy mb-2">Triage Assistant:</h3>
-          <div className="p-3 rounded-lg bg-gray-50">
-            <p className="text-sm text-gray-600">
-              Voice conversation features are coming soon. Take a photo or upload an image for analysis.
-            </p>
+          <h3 className="font-medium text-lg mb-2">AI Triage Assistant</h3>
+          <div className="border border-gray-200 rounded-lg p-2">
+            <elevenlabs-convai agent-id="1uK31fvCa73MForJM5BX"></elevenlabs-convai>
+            <p className="text-xs text-gray-500 mt-2 text-center">Powered by ElevenLabs AI</p>
           </div>
         </div>
       </div>
