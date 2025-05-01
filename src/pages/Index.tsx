@@ -14,7 +14,7 @@ const Index = () => {
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="p-4 pb-20">
-        <AlertBanner message="Voice AI assistance in multiple local languages is now available!" />
+        <AlertBanner message="Coming soon: Voice AI assistance in multiple local languages!" />
         
         <SOSButton />
         
@@ -24,23 +24,18 @@ const Index = () => {
             className="inline-flex items-center text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full hover:bg-gray-200"
           >
             <Mic size={14} className="mr-1 text-eresq-red" />
-            Voice-enabled emergency reporting
+            Voice features coming soon
           </button>
         </div>
         
         {showVoiceInfo && (
           <div className="mt-2 bg-blue-50 p-3 rounded-lg text-sm">
-            <h4 className="font-medium text-blue-800">How to use voice features:</h4>
+            <h4 className="font-medium text-blue-800">Voice features:</h4>
             <ul className="mt-1 space-y-1 text-blue-700 list-disc pl-4">
-              <li>Tap the SOS button and use voice commands to explain your emergency</li>
-              <li>Works in multiple languages including English, Hindi, and Telugu</li>
-              <li>Speak clearly and directly into your microphone</li>
-              <li>If you don't speak for 5 seconds, emergency alert will be sent automatically</li>
+              <li>Voice-enabled emergency reporting (Coming soon)</li>
+              <li>Support for multiple languages including English, Hindi, and Telugu</li>
+              <li>Voice response for accessibility</li>
             </ul>
-            <div className="mt-2 p-2 bg-blue-100 rounded flex items-start">
-              <Volume2 size={16} className="mr-1 text-blue-700 mt-0.5" />
-              <p className="text-xs text-blue-800">The AI will respond with voice so you can hear the instructions even if you cannot read</p>
-            </div>
           </div>
         )}
         
@@ -68,27 +63,20 @@ const Index = () => {
             className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full hover:bg-gray-200"
           >
             <Mic size={12} className="mr-1 text-blue-500" />
-            Voice-enabled medical assistance
+            Voice features coming soon
           </button>
         </div>
         
         <div className="mt-6 bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="font-medium text-lg text-center mb-2">Voice AI Troubleshooting</h3>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-start">
-              <VolumeX size={18} className="text-red-500 mr-2 mt-0.5" />
-              <p>If you see a "Voice Processing Error", please ensure your microphone is properly connected and permissions are granted.</p>
-            </div>
-            <div className="text-xs bg-gray-50 p-2 rounded">
-              <p className="font-medium">Tips for better voice recognition:</p>
-              <ul className="mt-1 space-y-1 pl-4 list-disc">
-                <li>Speak clearly and at normal speed</li>
-                <li>Minimize background noise</li>
-                <li>Hold your device 6-12 inches from your face</li>
-                <li>Use simple and direct phrases</li>
-                <li>If the first attempt fails, try again</li>
-              </ul>
-            </div>
+          <h3 className="font-medium text-lg text-center mb-2">Voice Features Information</h3>
+          <div className="text-xs bg-gray-50 p-2 rounded">
+            <p className="font-medium">Voice features are coming soon:</p>
+            <ul className="mt-1 space-y-1 pl-4 list-disc">
+              <li>Speak to report emergencies</li>
+              <li>Voice-guided medical assistance</li>
+              <li>Support for multiple languages</li>
+              <li>Accessible for low-literacy users</li>
+            </ul>
           </div>
         </div>
       </div>
