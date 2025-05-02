@@ -5,6 +5,7 @@ import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+
 const Triage = () => {
   const [cameraActive, setCameraActive] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -140,7 +141,8 @@ const Triage = () => {
       reader.readAsDataURL(file);
     }
   };
-  return <div className="min-h-screen bg-gray-50">
+  return (
+    <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="p-4 pb-24">
         <div className="flex items-center mb-4">
@@ -156,24 +158,30 @@ const Triage = () => {
           </p>
 
           {/* Camera View */}
-          {cameraActive && <div className="relative mb-4">
+          {cameraActive && (
+            <div className="relative mb-4">
               <video ref={videoRef} className="w-full h-64 object-cover rounded-lg bg-black" autoPlay playsInline muted />
               <button onClick={captureImage} className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow">
                 <div className="w-12 h-12 rounded-full border-2 border-gray-400"></div>
               </button>
-            </div>}
+            </div>
+          )}
 
           {/* Canvas for capturing image */}
           <canvas ref={canvasRef} className="hidden"></canvas>
 
           {/* Image Display/Upload Area */}
-          {!cameraActive && <div className="mb-4">
-              {selectedImage ? <div className="relative">
+          {!cameraActive && (
+            <div className="mb-4">
+              {selectedImage ? (
+                <div className="relative">
                   <img src={selectedImage} alt="Uploaded" className="w-full h-64 object-contain rounded-lg" />
                   <button onClick={() => setSelectedImage(null)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full">
                     <ArrowLeft size={16} className="transform rotate-45" />
                   </button>
-                </div> : <>
+                </div>
+              ) : (
+                <>
                   <button onClick={startCamera} className="w-full h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50">
                     <Camera size={48} className="mb-2 text-gray-400" />
                     <p className="text-center text-gray-500">
@@ -181,13 +189,16 @@ const Triage = () => {
                     </p>
                   </button>
                   
-                  {cameraError && <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                  {cameraError && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
                       <p className="text-sm text-red-600">{cameraError}</p>
                       <p className="text-xs text-red-500 mt-1">
                         You can still use the upload button below.
                       </p>
-                    </div>}
-                </>}
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Upload Option */}
               <label className="mt-2 block text-center">
@@ -196,14 +207,18 @@ const Triage = () => {
                 </div>
                 <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
               </label>
-            </div>}
+            </div>
+          )}
         </div>
 
-        {/* ElevenLabs Convai Widget */}
+        {/* ElevenLabs Convai Widget for Triage */}
+        <elevenlabs-convai agent-id="1uK31fvCa73MForJM5BX"></elevenlabs-convai>
         
       </div>
       
       <BottomNavBar />
-    </div>;
+    </div>
+  );
 };
+
 export default Triage;

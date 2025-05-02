@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+
 interface Responder {
   id: string;
   name: string;
@@ -15,12 +16,15 @@ interface Responder {
   distance: string;
   phoneNumber: string;
 }
+
 type EmergencyStatus = "new" | "accepted" | "declined" | "cancelled";
+
 const SOSAlert = () => {
   const [responders, setResponders] = useState<Responder[]>([]);
   const [alertSent, setAlertSent] = useState(false);
   const [emergencyId, setEmergencyId] = useState<string | null>(null);
   const [emergencyDescription, setEmergencyDescription] = useState("");
+  const [emergencyCreated, setEmergencyCreated] = useState(false);
   const navigate = useNavigate();
   const {
     toast
@@ -28,84 +32,93 @@ const SOSAlert = () => {
   const {
     user
   } = useAuth();
+
   useEffect(() => {
-    // Simulate alert being sent immediately
-    setAlertSent(true);
+    // Only create emergency record if it hasn't been created yet
+    if (!emergencyCreated) {
+      // Simulate alert being sent immediately
+      setAlertSent(true);
 
-    // Create emergency record and simulate responders
-    createEmergencyRecord("Emergency reported").then(record => {
-      if (record?.id) {
-        setEmergencyId(record.id);
-        notifyFrontlineWorkers(record.id);
-      }
-    });
-
-    // Load responders
-    const fetchResponders = async () => {
-      if (user && emergencyId) {
-        try {
-          // Get emergency responses with responder profiles
-          const {
-            data,
-            error
-          } = await supabase.from('emergency_responses').select(`
-              id, 
-              status,
-              responder_id
-            `).eq('emergency_id', emergencyId);
-          if (error) throw error;
-          if (data && data.length > 0) {
-            // Get responder profiles for all emergency responses
-            const responderIds = data.map(item => item.responder_id);
-            const {
-              data: profilesData,
-              error: profilesError
-            } = await supabase.from('profiles').select(`
-                id, 
-                full_name, 
-                frontline_type,
-                phone
-              `).in('id', responderIds);
-            if (profilesError) throw profilesError;
-            if (profilesData && profilesData.length > 0) {
-              // Get frontline types to map type IDs to names
-              const {
-                data: frontlineTypes,
-                error: typesError
-              } = await supabase.from('frontline_types').select('*');
-              if (typesError) throw typesError;
-              const typeMap = frontlineTypes ? frontlineTypes.reduce((acc: Record<string, string>, type) => {
-                acc[type.id] = type.name;
-                return acc;
-              }, {}) : {};
-
-              // Transform the data to match our responders structure
-              const transformedResponders = data.map(responseItem => {
-                const profile = profilesData.find(p => p.id === responseItem.responder_id);
-                if (!profile) return null;
-
-                // Ensure status is one of the allowed types
-                let typedStatus: "pending" | "accepted" = "pending";
-                if (responseItem.status === "accepted") {
-                  typedStatus = "accepted";
-                }
-                return {
-                  id: responseItem.id,
-                  name: profile.full_name || 'Unknown Responder',
-                  role: profile.frontline_type && typeMap[profile.frontline_type] ? typeMap[profile.frontline_type] : 'Healthcare Worker',
-                  status: typedStatus,
-                  distance: "Calculating...",
-                  // This would come from a location service
-                  phoneNumber: profile.phone || "+91 98765 43210"
-                };
-              }).filter(Boolean) as Responder[];
-              setResponders(transformedResponders);
-              return;
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching responders:', error);
+      // Create emergency record and simulate responders
+      createEmergencyRecord("Emergency reported").then(record => {
+        if (record?.id) {
+          setEmergencyId(record.id);
+          setEmergencyCreated(true);
+          notifyFrontlineWorkers(record.id);
         }
+      });
+    }
+
+    // Load responders when emergency ID is available
+    if (user && emergencyId) {
+      fetchResponders();
+    }
+  }, [user, emergencyId, emergencyCreated]);
+
+  const fetchResponders = async () => {
+    if (user && emergencyId) {
+      try {
+        // Get emergency responses with responder profiles
+        const {
+          data,
+          error
+        } = await supabase.from('emergency_responses').select(`
+            id, 
+            status,
+            responder_id
+          `).eq('emergency_id', emergencyId);
+        if (error) throw error;
+        if (data && data.length > 0) {
+          // Get responder profiles for all emergency responses
+          const responderIds = data.map(item => item.responder_id);
+          const {
+            data: profilesData,
+            error: profilesError
+          } = await supabase.from('profiles').select(`
+              id, 
+              full_name, 
+              frontline_type,
+              phone
+            `).in('id', responderIds);
+          if (profilesError) throw profilesError;
+          if (profilesData && profilesData.length > 0) {
+            // Get frontline types to map type IDs to names
+            const {
+              data: frontlineTypes,
+              error: typesError
+            } = await supabase.from('frontline_types').select('*');
+            if (typesError) throw typesError;
+            const typeMap = frontlineTypes ? frontlineTypes.reduce((acc: Record<string, string>, type) => {
+              acc[type.id] = type.name;
+              return acc;
+            }, {}) : {};
+
+            // Transform the data to match our responders structure
+            const transformedResponders = data.map(responseItem => {
+              const profile = profilesData.find(p => p.id === responseItem.responder_id);
+              if (!profile) return null;
+
+              // Ensure status is one of the allowed types
+              let typedStatus: "pending" | "accepted" = "pending";
+              if (responseItem.status === "accepted") {
+                typedStatus = "accepted";
+              }
+              return {
+                id: responseItem.id,
+                name: profile.full_name || 'Unknown Responder',
+                role: profile.frontline_type && typeMap[profile.frontline_type] ? typeMap[profile.frontline_type] : 'Healthcare Worker',
+                status: typedStatus,
+                distance: "Calculating...",
+                // This would come from a location service
+                phoneNumber: profile.phone || "+91 98765 43210"
+              };
+            }).filter(Boolean) as Responder[];
+            setResponders(transformedResponders);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching responders:', error);
       }
 
       // Fallback to simulated data
@@ -138,9 +151,9 @@ const SOSAlert = () => {
         distance: "3.1 km",
         phoneNumber: "+91 65432 10987"
       }]);
-    };
-    fetchResponders();
-  }, [user, emergencyId]);
+    }
+  };
+
   const createEmergencyRecord = async (description: string) => {
     try {
       if (!user) {
@@ -173,6 +186,7 @@ const SOSAlert = () => {
       return null;
     }
   };
+
   const notifyFrontlineWorkers = async (emergencyId: string) => {
     try {
       if (!emergencyId) return;
@@ -211,6 +225,7 @@ const SOSAlert = () => {
       return 0;
     }
   };
+
   const handleCancelEmergency = async () => {
     // Update emergency status in the database
     if (user && emergencyId) {
@@ -242,7 +257,9 @@ const SOSAlert = () => {
       navigate('/');
     }
   };
-  return <div className="min-h-screen bg-gray-50">
+
+  return (
+    <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="p-4 pb-32">
         <div className="flex items-center mb-4">
@@ -264,61 +281,85 @@ const SOSAlert = () => {
             Your emergency alert has been sent to nearby responders.
           </p>
 
-          {emergencyDescription && <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
+          {emergencyDescription && (
+            <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
               <p className="text-gray-800 text-sm font-semibold">Your emergency:</p>
               <p className="text-gray-700">{emergencyDescription}</p>
-            </div>}
+            </div>
+          )}
 
-          {!alertSent ? <div className="flex items-center justify-center h-32">
+          {!alertSent ? (
+            <div className="flex items-center justify-center h-32">
               <div className="animate-pulse flex items-center">
                 <div className="w-4 h-4 bg-red-500 rounded-full mr-2 animate-ping"></div>
                 <p>Sending alert to nearby responders...</p>
               </div>
-            </div> : <div className="bg-green-50 border border-green-200 rounded p-3 mb-4">
+            </div>
+          ) : (
+            <div className="bg-green-50 border border-green-200 rounded p-3 mb-4">
               <p className="text-green-800 text-sm">
                 Alert sent successfully! Responders are being notified.
               </p>
-            </div>}
+            </div>
+          )}
         </div>
 
-        {/* ElevenLabs Convai Widget */}
-        
+        {/* ElevenLabs Convai Widget for SOS Alert */}
+        <elevenlabs-convai agent-id="936JwZECCENUoVq4QME1"></elevenlabs-convai>
 
         <h2 className="text-lg font-semibold mt-6 mb-3">Available Responders</h2>
 
         <div className="space-y-3">
-          {responders.length === 0 ? <div className="flex items-center justify-center h-32">
+          {responders.length === 0 ? (
+            <div className="flex items-center justify-center h-32">
               <div className="animate-pulse">
                 <p>Looking for nearby responders...</p>
               </div>
-            </div> : responders.map(responder => <div key={responder.id} className="bg-white rounded-lg p-4 shadow-sm flex justify-between items-center">
+            </div>
+          ) : (
+            responders.map(responder => (
+              <div key={responder.id} className="bg-white rounded-lg p-4 shadow-sm flex justify-between items-center">
                 <div>
                   <div className="flex items-center">
                     <h3 className="font-medium">{responder.name}</h3>
-                    {responder.status === "accepted" && <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                    {responder.status === "accepted" && (
+                      <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                         Arriving
-                      </span>}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-gray-500">{responder.role}</p>
                   <p className="text-sm text-gray-500">{responder.distance} away</p>
                 </div>
                 <div className="flex items-center">
-                  {responder.status === "accepted" ? <CheckCircle className="text-green-500 mr-2" size={20} /> : <CircleX className="text-gray-400 mr-2" size={20} />}
+                  {responder.status === "accepted" ? (
+                    <CheckCircle className="text-green-500 mr-2" size={20} />
+                  ) : (
+                    <CircleX className="text-gray-400 mr-2" size={20} />
+                  )}
                   <Link to={`tel:${responder.phoneNumber}`} className="ml-2">
                     <PhoneCall size={20} className="text-eresq-navy" />
                   </Link>
                 </div>
-              </div>)}
+              </div>
+            ))
+          )}
         </div>
       </div>
       
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t py-0 px-[16px]">
-        <button onClick={handleCancelEmergency} className="w-full bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors py-[26px] text-2xl my-[40px]">
+      {/* Fix the Cancel Emergency button to be above BottomNavBar */}
+      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t">
+        <button 
+          onClick={handleCancelEmergency} 
+          className="w-full bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors py-4 text-xl"
+        >
           Cancel Emergency
         </button>
       </div>
       
       <BottomNavBar />
-    </div>;
+    </div>
+  );
 };
+
 export default SOSAlert;

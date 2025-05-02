@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { ArrowLeft, CheckCircle, CircleX, Navigation, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -17,6 +16,7 @@ interface Emergency {
   status: "new" | "accepted" | "declined";
   description: string;
   emergencyResponseId?: string; // For tracking accepted/declined status
+  coordinates?: { lat: number; lng: number }; // For storing patient location
 }
 
 const FrontlineDashboard = () => {
@@ -123,6 +123,15 @@ const FrontlineDashboard = () => {
                 typedStatus = "declined";
               }
               
+              // Simulate location data (in a real app, this would come from the database)
+              // For this example, we're using Delhi coordinates with slight variations
+              const baseCoords = { lat: 28.6139, lng: 77.2090 };
+              const randomOffset = () => (Math.random() - 0.5) * 0.01; // Small random offset
+              const simulatedCoords = {
+                lat: baseCoords.lat + randomOffset(),
+                lng: baseCoords.lng + randomOffset()
+              };
+              
               return {
                 id: emergency.id,
                 patientName: patient?.full_name || "Unknown Patient",
@@ -132,6 +141,7 @@ const FrontlineDashboard = () => {
                 status: typedStatus,
                 description: emergency.description,
                 emergencyResponseId: response?.id,
+                coordinates: simulatedCoords // Add coordinates
               };
             });
             
@@ -150,6 +160,7 @@ const FrontlineDashboard = () => {
               timeElapsed: "2 minutes ago",
               status: "new",
               description: "Complaining of chest pain and difficulty breathing",
+              coordinates: { lat: 28.6139, lng: 77.2090 }
             },
             {
               id: "2",
@@ -159,6 +170,7 @@ const FrontlineDashboard = () => {
               timeElapsed: "5 minutes ago",
               status: "new",
               description: "Fall from height, possible fracture",
+              coordinates: { lat: 28.6198, lng: 77.2150 }
             }
           ]);
         }
@@ -174,6 +186,7 @@ const FrontlineDashboard = () => {
             timeElapsed: "2 minutes ago",
             status: "new",
             description: "Complaining of chest pain and difficulty breathing",
+            coordinates: { lat: 28.6139, lng: 77.2090 }
           },
           {
             id: "2",
@@ -183,6 +196,7 @@ const FrontlineDashboard = () => {
             timeElapsed: "5 minutes ago",
             status: "new",
             description: "Fall from height, possible fracture",
+            coordinates: { lat: 28.6198, lng: 77.2150 }
           }
         ]);
       } finally {
@@ -284,6 +298,23 @@ const FrontlineDashboard = () => {
     }
   };
 
+  // Function to navigate to the patient's location
+  const navigateToPatient = (emergency: Emergency) => {
+    if (!emergency.coordinates) {
+      toast({
+        title: "Navigation Error",
+        description: "Patient location not available",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Open Google Maps for directions in a new tab
+    const { lat, lng } = emergency.coordinates;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    window.open(url, '_blank');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -363,7 +394,10 @@ const FrontlineDashboard = () => {
                       <CheckCircle size={16} className="mr-1" />
                       <span className="text-sm">Accepted</span>
                     </div>
-                    <button className="flex items-center bg-eresq-navy text-white px-3 py-1 rounded-md text-sm">
+                    <button 
+                      onClick={() => navigateToPatient(emergency)}
+                      className="flex items-center bg-eresq-navy text-white px-3 py-1 rounded-md text-sm"
+                    >
                       <Navigation size={14} className="mr-1" />
                       Navigate
                     </button>
