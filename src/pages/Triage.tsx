@@ -1,4 +1,3 @@
-
 import { useState, useRef } from "react";
 import { ArrowLeft, Upload, Camera } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -6,90 +5,85 @@ import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-
 const Triage = () => {
   const [cameraActive, setCameraActive] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  
-  const { toast } = useToast();
-
+  const {
+    toast
+  } = useToast();
   const startCamera = async () => {
     try {
       // Reset any previous camera errors
       setCameraError(null);
-      
+
       // Request camera permissions explicitly with proper constraints
-      const constraints = { 
-        video: { 
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 } 
-        } 
+      const constraints = {
+        video: {
+          facingMode: {
+            ideal: "environment"
+          },
+          width: {
+            ideal: 1280
+          },
+          height: {
+            ideal: 720
+          }
+        }
       };
-      
       console.log("Requesting camera access with constraints:", constraints);
-      
+
       // Try to access the camera
-      navigator.mediaDevices.getUserMedia(constraints)
-        .then((stream) => {
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.onloadedmetadata = () => {
-              videoRef.current?.play()
-                .then(() => {
-                  setCameraActive(true);
-                  toast({
-                    title: "Camera active",
-                    description: "Tap the center button to capture an image",
-                  });
-                })
-                .catch((playError) => {
-                  console.error('Video play error:', playError);
-                  setCameraError("Failed to start video preview");
-                  throw new Error('Failed to start video preview');
-                });
-            };
-          }
-        })
-        .catch((err) => {
-          console.error('Error accessing camera:', err);
-          
-          // Show a more specific error message based on the error
-          let errorMessage = "Unable to access your camera.";
-          
-          if (err.name === 'NotAllowedError') {
-            errorMessage += " You denied camera access. Please check permissions and try again.";
-          } else if (err.name === 'NotFoundError') {
-            errorMessage += " No camera found on your device.";
-          } else if (err.name === 'NotReadableError') {
-            errorMessage += " Your camera might be in use by another application.";
-          } else {
-            errorMessage += " Please check permissions and try again.";
-          }
-          
-          setCameraError(errorMessage);
-          
-          toast({
-            title: "Camera Error",
-            description: errorMessage,
-            variant: "destructive",
-          });
+      navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().then(() => {
+              setCameraActive(true);
+              toast({
+                title: "Camera active",
+                description: "Tap the center button to capture an image"
+              });
+            }).catch(playError => {
+              console.error('Video play error:', playError);
+              setCameraError("Failed to start video preview");
+              throw new Error('Failed to start video preview');
+            });
+          };
+        }
+      }).catch(err => {
+        console.error('Error accessing camera:', err);
+
+        // Show a more specific error message based on the error
+        let errorMessage = "Unable to access your camera.";
+        if (err.name === 'NotAllowedError') {
+          errorMessage += " You denied camera access. Please check permissions and try again.";
+        } else if (err.name === 'NotFoundError') {
+          errorMessage += " No camera found on your device.";
+        } else if (err.name === 'NotReadableError') {
+          errorMessage += " Your camera might be in use by another application.";
+        } else {
+          errorMessage += " Please check permissions and try again.";
+        }
+        setCameraError(errorMessage);
+        toast({
+          title: "Camera Error",
+          description: errorMessage,
+          variant: "destructive"
         });
+      });
     } catch (error) {
       console.error('General camera error:', error);
       setCameraError("Failed to initialize camera. Please try again.");
       toast({
         title: "Camera Error",
         description: "Unable to access your camera due to a system error. Please try again.",
-        variant: "destructive",
+        variant: "destructive"
       });
     }
   };
-  
   const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
@@ -98,7 +92,6 @@ const Triage = () => {
       setCameraActive(false);
     }
   };
-
   const captureImage = () => {
     if (canvasRef.current && videoRef.current) {
       const context = canvasRef.current.getContext('2d');
@@ -106,54 +99,48 @@ const Triage = () => {
         // Set canvas dimensions to match video
         canvasRef.current.width = videoRef.current.videoWidth;
         canvasRef.current.height = videoRef.current.videoHeight;
-        
+
         // Draw the video frame to the canvas
         context.drawImage(videoRef.current, 0, 0);
-        
         try {
           // Convert the canvas to a data URL and set as selected image
           const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.8);
           setSelectedImage(dataUrl);
-          
+
           // Stop the camera stream
           stopCamera();
-
           toast({
             title: "Image captured",
-            description: "Image captured successfully. You can now use the AI assistant below.",
+            description: "Image captured successfully. You can now use the AI assistant below."
           });
-          
         } catch (e) {
           console.error('Error capturing image:', e);
           toast({
             title: "Error",
             description: "Failed to capture image. Please try again.",
-            variant: "destructive",
+            variant: "destructive"
           });
         }
       }
     }
   };
-
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = event => {
         if (event.target?.result) {
           setSelectedImage(event.target.result as string);
           toast({
             title: "Image Uploaded",
-            description: "Image uploaded successfully. You can now use the AI assistant below.",
+            description: "Image uploaded successfully. You can now use the AI assistant below."
           });
         }
       };
       reader.readAsDataURL(file);
     }
   };
-  
-  return (
-    <div className="min-h-screen bg-gray-50">
+  return <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="p-4 pb-24">
         <div className="flex items-center mb-4">
@@ -169,96 +156,54 @@ const Triage = () => {
           </p>
 
           {/* Camera View */}
-          {cameraActive && (
-            <div className="relative mb-4">
-              <video 
-                ref={videoRef} 
-                className="w-full h-64 object-cover rounded-lg bg-black"
-                autoPlay 
-                playsInline
-                muted
-              />
-              <button
-                onClick={captureImage}
-                className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow"
-              >
+          {cameraActive && <div className="relative mb-4">
+              <video ref={videoRef} className="w-full h-64 object-cover rounded-lg bg-black" autoPlay playsInline muted />
+              <button onClick={captureImage} className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow">
                 <div className="w-12 h-12 rounded-full border-2 border-gray-400"></div>
               </button>
-            </div>
-          )}
+            </div>}
 
           {/* Canvas for capturing image */}
           <canvas ref={canvasRef} className="hidden"></canvas>
 
           {/* Image Display/Upload Area */}
-          {!cameraActive && (
-            <div className="mb-4">
-              {selectedImage ? (
-                <div className="relative">
-                  <img
-                    src={selectedImage}
-                    alt="Uploaded"
-                    className="w-full h-64 object-contain rounded-lg"
-                  />
-                  <button
-                    onClick={() => setSelectedImage(null)}
-                    className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"
-                  >
+          {!cameraActive && <div className="mb-4">
+              {selectedImage ? <div className="relative">
+                  <img src={selectedImage} alt="Uploaded" className="w-full h-64 object-contain rounded-lg" />
+                  <button onClick={() => setSelectedImage(null)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full">
                     <ArrowLeft size={16} className="transform rotate-45" />
                   </button>
-                </div>
-              ) : (
-                <>
-                  <button 
-                    onClick={startCamera}
-                    className="w-full h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
-                  >
+                </div> : <>
+                  <button onClick={startCamera} className="w-full h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50">
                     <Camera size={48} className="mb-2 text-gray-400" />
                     <p className="text-center text-gray-500">
                       Tap to take a photo
                     </p>
                   </button>
                   
-                  {cameraError && (
-                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                  {cameraError && <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
                       <p className="text-sm text-red-600">{cameraError}</p>
                       <p className="text-xs text-red-500 mt-1">
                         You can still use the upload button below.
                       </p>
-                    </div>
-                  )}
-                </>
-              )}
+                    </div>}
+                </>}
 
               {/* Upload Option */}
               <label className="mt-2 block text-center">
                 <div className="inline-flex items-center text-sm text-gray-500 cursor-pointer hover:text-gray-700">
                   <Upload size={16} className="mr-1" /> Upload image instead
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageUpload}
-                />
+                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
               </label>
-            </div>
-          )}
+            </div>}
         </div>
 
         {/* ElevenLabs Convai Widget */}
-        <div className="bg-white rounded-lg p-4 shadow-sm mt-4">
-          <h3 className="font-medium text-lg mb-2">AI Triage Assistant</h3>
-          <div className="border border-gray-200 rounded-lg p-2">
-            <elevenlabs-convai agent-id="1uK31fvCa73MForJM5BX"></elevenlabs-convai>
-            <p className="text-xs text-gray-500 mt-2 text-center">Powered by ElevenLabs AI</p>
-          </div>
-        </div>
+        
       </div>
       
       <BottomNavBar />
-    </div>
-  );
+    </div>;
 };
-
 export default Triage;
