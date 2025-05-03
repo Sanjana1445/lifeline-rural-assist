@@ -14,6 +14,7 @@ export type Database = {
           created_at: string | null
           description: string
           id: string
+          is_in_history: boolean | null
           latitude: number | null
           location: string | null
           longitude: number | null
@@ -25,6 +26,7 @@ export type Database = {
           created_at?: string | null
           description: string
           id?: string
+          is_in_history?: boolean | null
           latitude?: number | null
           location?: string | null
           longitude?: number | null
@@ -36,6 +38,7 @@ export type Database = {
           created_at?: string | null
           description?: string
           id?: string
+          is_in_history?: boolean | null
           latitude?: number | null
           location?: string | null
           longitude?: number | null

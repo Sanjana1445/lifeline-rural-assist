@@ -23,7 +23,7 @@ const SOSAlert = () => {
   const [responders, setResponders] = useState<Responder[]>([]);
   const [alertSent, setAlertSent] = useState(false);
   const [emergencyId, setEmergencyId] = useState<string | null>(null);
-  const [emergencyDescription, setEmergencyDescription] = useState("");
+  const [emergencyDescription, setEmergencyDescription] = useState("Medical emergency reported");
   const [emergencyCreated, setEmergencyCreated] = useState(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
   
@@ -60,11 +60,10 @@ const SOSAlert = () => {
       setAlertSent(true);
 
       // Create emergency record only once
-      createEmergencyRecord("Emergency reported").then(record => {
+      createEmergencyRecord("Medical emergency reported").then(record => {
         if (record?.id) {
           setEmergencyId(record.id);
           setEmergencyCreated(true);
-          notifyFrontlineWorkers(record.id);
         }
       });
     }
@@ -98,10 +97,12 @@ const SOSAlert = () => {
   }, [emergencyId]);
 
   const fetchResponders = async () => {
-    if (user && emergencyId) {
+    if (emergencyId) {
       try {
+        console.log("Fetching responders for emergency ID:", emergencyId);
+        
         // Get emergency responses with responder profiles
-        const { data, error } = await supabase
+        const { data: responseData, error: responseError } = await supabase
           .from('emergency_responses')
           .select(`
             id, 
@@ -110,11 +111,17 @@ const SOSAlert = () => {
           `)
           .eq('emergency_id', emergencyId);
           
-        if (error) throw error;
+        if (responseError) {
+          console.error("Error fetching emergency responses:", responseError);
+          throw responseError;
+        }
         
-        if (data && data.length > 0) {
+        console.log("Emergency responses data:", responseData);
+        
+        if (responseData && responseData.length > 0) {
           // Get responder profiles for all emergency responses
-          const responderIds = data.map(item => item.responder_id);
+          const responderIds = responseData.map(item => item.responder_id);
+          
           const { data: profilesData, error: profilesError } = await supabase
             .from('profiles')
             .select(`
@@ -125,7 +132,12 @@ const SOSAlert = () => {
             `)
             .in('id', responderIds);
             
-          if (profilesError) throw profilesError;
+          if (profilesError) {
+            console.error("Error fetching responder profiles:", profilesError);
+            throw profilesError;
+          }
+          
+          console.log("Profiles data:", profilesData);
           
           if (profilesData && profilesData.length > 0) {
             // Get frontline types to map type IDs to names
@@ -133,7 +145,12 @@ const SOSAlert = () => {
               .from('frontline_types')
               .select('*');
               
-            if (typesError) throw typesError;
+            if (typesError) {
+              console.error("Error fetching frontline types:", typesError);
+              throw typesError;
+            }
+            
+            console.log("Frontline types:", frontlineTypes);
             
             const typeMap = frontlineTypes ? frontlineTypes.reduce((acc: Record<string, string>, type) => {
               acc[type.id] = type.name;
@@ -141,7 +158,7 @@ const SOSAlert = () => {
             }, {}) : {};
 
             // Transform the data to match our responders structure
-            const transformedResponders = data.map(responseItem => {
+            const transformedResponders = responseData.map(responseItem => {
               const profile = profilesData.find(p => p.id === responseItem.responder_id);
               if (!profile) return null;
 
@@ -156,57 +173,42 @@ const SOSAlert = () => {
                 name: profile.full_name || 'Unknown Responder',
                 role: profile.frontline_type && typeMap[profile.frontline_type] ? typeMap[profile.frontline_type] : 'Healthcare Worker',
                 status: typedStatus,
-                phoneNumber: profile.phone || "+91 98765 43210"
+                phoneNumber: profile.phone || ""
               };
             }).filter(Boolean) as Responder[];
+            
+            console.log("Transformed responders:", transformedResponders);
             
             if (transformedResponders.length > 0) {
               setResponders(transformedResponders);
               return;
+            } else {
+              console.log("No valid responders found after transformation");
             }
+          } else {
+            console.log("No profile data found for responders");
           }
+        } else {
+          console.log("No emergency responses found");
         }
       } catch (error) {
         console.error('Error fetching responders:', error);
       }
-
-      // Fallback to simulated data if no actual responders found
-      setResponders([{
-        id: "1",
-        name: "Dr. Rajesh Kumar",
-        role: "Medical Officer",
-        status: "accepted",
-        phoneNumber: "+91 98765 43210"
-      }, {
-        id: "2",
-        name: "Sunita Sharma",
-        role: "ASHA Worker",
-        status: "accepted",
-        phoneNumber: "+91 87654 32109"
-      }, {
-        id: "3",
-        name: "Amit Singh",
-        role: "ANM",
-        status: "pending",
-        phoneNumber: "+91 76543 21098"
-      }, {
-        id: "4",
-        name: "Dr. Priya Patel",
-        role: "PHC Doctor",
-        status: "pending",
-        phoneNumber: "+91 65432 10987"
-      }]);
     }
   };
 
   const createEmergencyRecord = async (description: string) => {
     try {
       if (!user) {
-        console.warn("No user logged in, using simulated emergency record");
-        return {
-          id: "simulated-emergency-id"
-        };
+        console.warn("No user logged in, cannot create emergency record");
+        return null;
       }
+      
+      console.log("Creating emergency record with:", { 
+        patient_id: user.id, 
+        description, 
+        location: userLocation ? `${userLocation.lat},${userLocation.lng}` : "Unknown location"
+      });
       
       // Create emergency record with user location
       const { data, error } = await supabase
@@ -217,15 +219,23 @@ const SOSAlert = () => {
           location: userLocation ? `${userLocation.lat},${userLocation.lng}` : "Unknown location",
           latitude: userLocation?.lat || null,
           longitude: userLocation?.lng || null,
-          status: "new" as EmergencyStatus
+          status: "new" as EmergencyStatus,
+          is_in_history: true
         })
         .select('id')
         .single();
         
       if (error) {
         console.error("Error creating emergency record:", error);
+        toast({
+          title: "Error",
+          description: "Failed to create emergency record. Please try again.",
+          variant: "destructive"
+        });
         throw error;
       }
+      
+      console.log("Emergency record created:", data);
       
       toast({
         title: "Emergency Created",
@@ -236,52 +246,6 @@ const SOSAlert = () => {
     } catch (error) {
       console.error("Failed to create emergency record:", error);
       return null;
-    }
-  };
-
-  const notifyFrontlineWorkers = async (emergencyId: string) => {
-    try {
-      if (!emergencyId) return;
-
-      // Get all frontline workers
-      const { data: frontlineWorkers, error } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('is_frontline_worker', true)
-        .limit(10);
-        
-      if (error) throw error;
-      
-      if (frontlineWorkers && frontlineWorkers.length > 0) {
-        // Create emergency response records for each worker
-        const responseRecords = frontlineWorkers.map(worker => ({
-          emergency_id: emergencyId,
-          responder_id: worker.id,
-          status: 'pending'
-        }));
-        
-        const { error: insertError } = await supabase
-          .from('emergency_responses')
-          .insert(responseRecords);
-          
-        if (insertError) throw insertError;
-        
-        toast({
-          title: "Responders Notified",
-          description: `${frontlineWorkers.length} frontline workers have been notified of your emergency.`
-        });
-        
-        return frontlineWorkers.length;
-      } else {
-        toast({
-          title: "No Responders Found",
-          description: "We couldn't find any available frontline workers. Using simulated responders."
-        });
-        return 0;
-      }
-    } catch (error) {
-      console.error("Failed to notify frontline workers:", error);
-      return 0;
     }
   };
 

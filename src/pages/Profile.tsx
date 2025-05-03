@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,11 +8,13 @@ import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { User, Users } from "lucide-react";
+
 interface FrontlineType {
   id: number;
   name: string;
   description: string | null;
 }
+
 const Profile = () => {
   const {
     user,
@@ -30,6 +33,7 @@ const Profile = () => {
     toast
   } = useToast();
   const navigate = useNavigate();
+
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user) return;
@@ -61,14 +65,22 @@ const Profile = () => {
     fetchProfile();
     fetchFrontlineTypes();
   }, [user, toast]);
+
   const handleLogout = async () => {
     await logout();
   };
+
   const handleRegisterFrontline = () => {
     navigate('/frontline-registration');
   };
+  
+  const handleEditProfile = () => {
+    navigate('/edit-profile');
+  };
+
   if (!profile) return null;
   const frontlineTypeName = profile.frontline_type ? frontlineTypes.find(type => type.id === profile.frontline_type)?.name : null;
+
   return <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="p-4 pb-20">
@@ -120,7 +132,7 @@ const Profile = () => {
                 <Users size={18} />
                 Register as Frontline Worker
               </Button>}
-            <Button variant="outline" className="w-full" onClick={() => {/* TODO: Implement edit profile */}}>
+            <Button variant="outline" className="w-full" onClick={handleEditProfile}>
               Edit Profile
             </Button>
             <Button variant="destructive" className="w-full" onClick={handleLogout}>
@@ -132,4 +144,5 @@ const Profile = () => {
       <BottomNavBar />
     </div>;
 };
+
 export default Profile;

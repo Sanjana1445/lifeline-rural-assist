@@ -10,6 +10,7 @@ import NearestClinic from "./pages/NearestClinic";
 import ConnectCFRs from "./pages/ConnectCFRs";
 import Triage from "./pages/Triage";
 import Profile from "./pages/Profile";
+import EditProfile from "./pages/EditProfile";
 import History from "./pages/History";
 import Education from "./pages/Education";
 import FrontlineDashboard from "./pages/FrontlineDashboard";
@@ -47,6 +48,7 @@ const App = () => {
                 <Route path="/connect-cfrs" element={<ConnectCFRs />} />
                 <Route path="/triage" element={<Triage />} />
                 <Route path="/profile" element={<Profile />} />
+                <Route path="/edit-profile" element={<EditProfile />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/education" element={<Education />} />
                 <Route path="/frontline-dashboard" element={<FrontlineDashboard />} />
