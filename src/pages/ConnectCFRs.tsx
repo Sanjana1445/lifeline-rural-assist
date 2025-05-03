@@ -9,7 +9,6 @@ interface CFR {
   id: string;
   name: string;
   role: string;
-  distance: string;
   available: boolean;
   phone: string;
 }
@@ -20,7 +19,6 @@ const ConnectCFRs = () => {
       id: "1",
       name: "Rahul Sharma",
       role: "ASHA Worker",
-      distance: "0.8 km",
       available: true,
       phone: "+91 9876543210",
     },
@@ -28,7 +26,6 @@ const ConnectCFRs = () => {
       id: "2",
       name: "Priya Mehta",
       role: "ANM",
-      distance: "1.3 km",
       available: true,
       phone: "+91 8765432109",
     },
@@ -36,15 +33,13 @@ const ConnectCFRs = () => {
       id: "3",
       name: "Suresh Patel",
       role: "Community Volunteer",
-      distance: "1.7 km",
       available: false,
       phone: "+91 7654321098",
     },
     {
       id: "4",
       name: "Anita Singh",
-      role: "Red Cross Volunteer",
-      distance: "2.1 km",
+      role: "Ambulance",
       available: true,
       phone: "+91 6543210987",
     },
@@ -52,9 +47,22 @@ const ConnectCFRs = () => {
       id: "5",
       name: "Mohan Kumar",
       role: "PHC Staff",
-      distance: "2.8 km",
       available: true,
       phone: "+91 5432109876",
+    },
+    {
+      id: "6",
+      name: "Dedeepya",
+      role: "ASHA Worker",
+      available: true,
+      phone: "+91 8019391635",
+    },
+    {
+      id: "7",
+      name: "Siri",
+      role: "ANM",
+      available: true,
+      phone: "+91 9059372471",
     },
   ]);
 
@@ -83,7 +91,6 @@ const ConnectCFRs = () => {
               <div className="mb-2">
                 <h3 className="font-medium text-sm">{cfr.name}</h3>
                 <p className="text-xs text-gray-500">{cfr.role}</p>
-                <p className="text-xs text-gray-500">{cfr.distance} away</p>
                 <p
                   className={`text-xs mt-1 ${
                     cfr.available ? "text-green-600" : "text-red-600"

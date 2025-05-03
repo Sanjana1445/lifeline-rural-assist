@@ -18,68 +18,65 @@ interface Clinic {
   id: string;
   name: string;
   type: string;
-  distance: string;
   address: string;
   phone: string;
   isOpen: boolean;
   location?: { lat: number; lng: number };
 }
 
+// Pune, India coordinates
+const PUNE_COORDINATES = { lat: 18.5204, lng: 73.8567 };
+
 const NearestClinic = () => {
   const [clinics] = useState<Clinic[]>([
     {
       id: "1",
-      name: "Arogya Primary Health Center",
-      type: "PHC",
-      distance: "1.2 km",
-      address: "123 Main Road, Village Nagar",
+      name: "Sahyadri Super Speciality Hospital",
+      type: "Hospital",
+      address: "Plot No. 30-C, Karve Road, Erandwane, Pune",
       phone: "+91 9876543210",
       isOpen: true,
-      location: { lat: 28.6139, lng: 77.2090 }, // Example coordinates (Delhi)
+      location: { lat: 18.5120, lng: 73.8289 },
     },
     {
       id: "2",
-      name: "Swasthya Sub-Center",
-      type: "Sub-center",
-      distance: "2.5 km",
-      address: "456 Central Avenue, Gram Panchayat",
+      name: "Ruby Hall Clinic",
+      type: "Hospital",
+      address: "40, Sassoon Road, Sangamvadi, Pune",
       phone: "+91 8765432109",
       isOpen: true,
-      location: { lat: 28.6198, lng: 77.2150 }, // Nearby location
+      location: { lat: 18.5316, lng: 73.8788 },
     },
     {
       id: "3",
-      name: "Jeevan Community Health Center",
-      type: "CHC",
-      distance: "3.8 km",
-      address: "789 Hospital Road, District Area",
+      name: "Deenanath Mangeshkar Hospital",
+      type: "Hospital",
+      address: "Erandwane, Pune",
       phone: "+91 7654321098",
       isOpen: true,
-      location: { lat: 28.6080, lng: 77.2010 }, // Nearby location
+      location: { lat: 18.5066, lng: 73.8246 },
     },
     {
       id: "4",
-      name: "Nirmal Ayushman Health Station",
-      type: "Health Post",
-      distance: "4.2 km",
-      address: "101 Health Street, Block B",
+      name: "Jehangir Hospital",
+      type: "Hospital",
+      address: "32, Sassoon Road, Sangamvadi, Pune",
       phone: "+91 6543210987",
       isOpen: false,
-      location: { lat: 28.6240, lng: 77.2180 }, // Nearby location
+      location: { lat: 18.5301, lng: 73.8795 },
     },
     {
       id: "5",
-      name: "AIIMS Rural Extension Center",
-      type: "Medical Center",
-      distance: "5.6 km",
-      address: "202 Medical Campus, District HQ",
+      name: "KEM Hospital",
+      type: "Hospital",
+      address: "Rasta Peth, Pune",
       phone: "+91 5432109876",
       isOpen: true,
-      location: { lat: 28.6050, lng: 77.2300 }, // Nearby location
+      location: { lat: 18.5245, lng: 73.8654 },
     },
   ]);
   
-  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number}>(PUNE_COORDINATES);
   const [userAddress, setUserAddress] = useState("Locating you...");
   const mapRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<any>(null);
@@ -91,7 +88,7 @@ const NearestClinic = () => {
     if (!mapRef.current || !window.google) return;
     
     const mapOptions = {
-      center: userLocation || { lat: 28.6139, lng: 77.2090 }, // Default to Delhi if user location not available
+      center: userLocation,
       zoom: 13,
       mapTypeControl: false,
       streetViewControl: false,
@@ -117,7 +114,7 @@ const NearestClinic = () => {
         content: `
           <div style="padding: 8px;">
             <h3 style="font-weight: bold; margin-bottom: 4px;">${clinic.name}</h3>
-            <p>${clinic.type} • ${clinic.distance}</p>
+            <p>${clinic.type}</p>
             <p style="margin-top: 4px;">${clinic.address}</p>
           </div>
         `
@@ -130,22 +127,20 @@ const NearestClinic = () => {
       return marker;
     }).filter(Boolean);
     
-    // Add user location marker if available
-    if (userLocation) {
-      new window.google.maps.Marker({
-        position: userLocation,
-        map: googleMapRef.current,
-        title: "Your Location",
-        icon: {
-          url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
-        }
-      });
-    }
+    // Add user location marker
+    new window.google.maps.Marker({
+      position: userLocation,
+      map: googleMapRef.current,
+      title: "Your Location",
+      icon: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+      }
+    });
   };
 
   // Load Google Maps API
   useEffect(() => {
-    // Load user's location
+    // Try to get user's location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -169,9 +164,13 @@ const NearestClinic = () => {
           console.error("Error getting location:", error);
           toast({
             title: "Location Error",
-            description: "Unable to access your location. Using default location.",
+            description: "Using Pune, India as default location.",
             variant: "destructive"
           });
+          
+          // Use Pune as default location
+          setUserLocation(PUNE_COORDINATES);
+          setUserAddress("Pune, Maharashtra, India");
         }
       );
     }
@@ -179,10 +178,8 @@ const NearestClinic = () => {
     // Load Google Maps script
     if (!window.google) {
       window.initMap = function() {
-        // Map will be initialized when user location is available
-        if (userLocation) {
-          initializeMap();
-        }
+        // Map will be initialized when Google Maps API is loaded
+        initializeMap();
       };
       
       const script = document.createElement('script');
@@ -195,19 +192,22 @@ const NearestClinic = () => {
         document.head.removeChild(script);
         delete window.initMap;
       };
+    } else {
+      // If Google Maps is already loaded
+      initializeMap();
     }
   }, [toast]);
   
-  // Initialize map when user location or Google Maps API becomes available
+  // Re-initialize map when user location changes
   useEffect(() => {
-    if (window.google && userLocation) {
+    if (window.google) {
       initializeMap();
     }
   }, [userLocation]);
 
   // Function to get directions to a clinic
   const getDirections = (clinic: Clinic) => {
-    if (!clinic.location || !userLocation) return;
+    if (!clinic.location) return;
     
     // Open Google Maps for directions in a new tab
     const url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${clinic.location.lat},${clinic.location.lng}&travelmode=driving`;
@@ -259,7 +259,7 @@ const NearestClinic = () => {
                 </span>
               </div>
               <p className="text-sm text-gray-500 mb-1">
-                {clinic.type} • {clinic.distance} away
+                {clinic.type}
               </p>
               <p className="text-sm text-gray-500 mb-3">{clinic.address}</p>
               <div className="flex justify-between">

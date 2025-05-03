@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { ArrowLeft, CheckCircle, CircleX, Navigation, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -11,12 +12,11 @@ interface Emergency {
   id: string;
   patientName: string;
   location: string;
-  distance: string;
-  timeElapsed: string;
   status: "new" | "accepted" | "declined";
   description: string;
-  emergencyResponseId?: string; // For tracking accepted/declined status
-  coordinates?: { lat: number; lng: number }; // For storing patient location
+  timeElapsed: string;
+  emergencyResponseId?: string;
+  coordinates?: { lat: number; lng: number };
 }
 
 const FrontlineDashboard = () => {
@@ -81,7 +81,7 @@ const FrontlineDashboard = () => {
           // Get all the emergency IDs
           const emergencyIds = responseData.map(r => r.emergency_id);
           
-          // Get emergency details
+          // Get emergency details with patient location
           const { data: emergencyData, error: emergencyError } = await supabase
             .from('emergencies')
             .select(`
@@ -89,6 +89,8 @@ const FrontlineDashboard = () => {
               description, 
               status, 
               location, 
+              latitude,
+              longitude,
               created_at,
               patient_id
             `)
@@ -123,94 +125,46 @@ const FrontlineDashboard = () => {
                 typedStatus = "declined";
               }
               
-              // Simulate location data (in a real app, this would come from the database)
-              // For this example, we're using Delhi coordinates with slight variations
-              const baseCoords = { lat: 28.6139, lng: 77.2090 };
-              const randomOffset = () => (Math.random() - 0.5) * 0.01; // Small random offset
-              const simulatedCoords = {
-                lat: baseCoords.lat + randomOffset(),
-                lng: baseCoords.lng + randomOffset()
-              };
+              // Get coordinates from the emergency record if available
+              const coordinates = emergency.latitude && emergency.longitude ? 
+                { lat: emergency.latitude, lng: emergency.longitude } : 
+                undefined;
               
               return {
                 id: emergency.id,
                 patientName: patient?.full_name || "Unknown Patient",
                 location: emergency.location || "Unknown Location",
-                distance: "Calculating...", // Would come from location service
                 timeElapsed: getTimeElapsed(emergency.created_at),
                 status: typedStatus,
                 description: emergency.description,
                 emergencyResponseId: response?.id,
-                coordinates: simulatedCoords // Add coordinates
+                coordinates: coordinates
               };
             });
             
             setEmergencies(transformedEmergencies);
-          } else {
-            setEmergencies([]);
+            setLoading(false);
+            return;
           }
-        } else {
-          // No responses found, use demo data
-          setEmergencies([
-            {
-              id: "1",
-              patientName: "Ramesh Kumar",
-              location: "Village Nagar, Block A",
-              distance: "1.2 km",
-              timeElapsed: "2 minutes ago",
-              status: "new",
-              description: "Complaining of chest pain and difficulty breathing",
-              coordinates: { lat: 28.6139, lng: 77.2090 }
-            },
-            {
-              id: "2",
-              patientName: "Meena Singh",
-              location: "Central Road, District HQ",
-              distance: "0.8 km",
-              timeElapsed: "5 minutes ago",
-              status: "new",
-              description: "Fall from height, possible fracture",
-              coordinates: { lat: 28.6198, lng: 77.2150 }
-            }
-          ]);
-        }
+        } 
+        
+        // No emergencies found
+        setEmergencies([]);
+        setLoading(false);
       } catch (error) {
         console.error("Error fetching emergencies:", error);
-        // Fallback to demo data
-        setEmergencies([
-          {
-            id: "1",
-            patientName: "Ramesh Kumar",
-            location: "Village Nagar, Block A",
-            distance: "1.2 km",
-            timeElapsed: "2 minutes ago",
-            status: "new",
-            description: "Complaining of chest pain and difficulty breathing",
-            coordinates: { lat: 28.6139, lng: 77.2090 }
-          },
-          {
-            id: "2",
-            patientName: "Meena Singh",
-            location: "Central Road, District HQ",
-            distance: "0.8 km",
-            timeElapsed: "5 minutes ago",
-            status: "new",
-            description: "Fall from height, possible fracture",
-            coordinates: { lat: 28.6198, lng: 77.2150 }
-          }
-        ]);
-      } finally {
+        setEmergencies([]);
         setLoading(false);
       }
     };
     
     fetchEmergencies();
     
-    // Subscribe to real-time updates for new emergencies
+    // Subscribe to real-time updates for emergency_responses
     const subscription = supabase
-      .channel('public:emergency_responses')
+      .channel('emergency-updates')
       .on('postgres_changes', {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
         table: 'emergency_responses',
         filter: `responder_id=eq.${user.id}`
@@ -241,16 +195,16 @@ const FrontlineDashboard = () => {
           title: "Emergency Accepted",
           description: "You have accepted this emergency call.",
         });
+        
+        // Update local state
+        setEmergencies((prev) =>
+          prev.map((emergency) =>
+            emergency.id === id
+              ? { ...emergency, status: "accepted" }
+              : emergency
+          )
+        );
       }
-      
-      // Update local state
-      setEmergencies((prev) =>
-        prev.map((emergency) =>
-          emergency.id === id
-            ? { ...emergency, status: "accepted" }
-            : emergency
-        )
-      );
     } catch (error) {
       console.error("Error accepting emergency:", error);
       toast({
@@ -278,16 +232,16 @@ const FrontlineDashboard = () => {
           title: "Emergency Declined",
           description: "You have declined this emergency call.",
         });
+        
+        // Update local state
+        setEmergencies((prev) =>
+          prev.map((emergency) =>
+            emergency.id === id
+              ? { ...emergency, status: "declined" }
+              : emergency
+          )
+        );
       }
-      
-      // Update local state
-      setEmergencies((prev) =>
-        prev.map((emergency) =>
-          emergency.id === id
-            ? { ...emergency, status: "declined" }
-            : emergency
-        )
-      );
     } catch (error) {
       console.error("Error declining emergency:", error);
       toast({
@@ -368,7 +322,7 @@ const FrontlineDashboard = () => {
                 </div>
                 
                 <p className="text-sm text-gray-500 mb-1">
-                  📍 {emergency.location} ({emergency.distance} away)
+                  📍 {emergency.location}
                 </p>
                 
                 <p className="text-sm mb-3">{emergency.description}</p>

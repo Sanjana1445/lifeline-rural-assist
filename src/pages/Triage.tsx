@@ -212,7 +212,10 @@ const Triage = () => {
         </div>
 
         {/* ElevenLabs Convai Widget for Triage */}
-        <elevenlabs-convai agent-id="1uK31fvCa73MForJM5BX"></elevenlabs-convai>
+        <div className="mb-4">
+          <elevenlabs-convai agent-id="1uK31fvCa73MForJM5BX"></elevenlabs-convai>
+          <script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
+        </div>
         
       </div>
       

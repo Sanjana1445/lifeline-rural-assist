@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { ArrowLeft, CheckCircle, CircleX, PhoneCall } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
@@ -13,7 +14,6 @@ interface Responder {
   name: string;
   role: string;
   status: "pending" | "accepted";
-  distance: string;
   phoneNumber: string;
 }
 
@@ -25,13 +25,33 @@ const SOSAlert = () => {
   const [emergencyId, setEmergencyId] = useState<string | null>(null);
   const [emergencyDescription, setEmergencyDescription] = useState("");
   const [emergencyCreated, setEmergencyCreated] = useState(false);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  
   const navigate = useNavigate();
-  const {
-    toast
-  } = useToast();
-  const {
-    user
-  } = useAuth();
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  // Get user's location
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          toast({
+            title: "Location Error",
+            description: "Unable to access your location. Some features may be limited.",
+            variant: "destructive"
+          });
+        }
+      );
+    }
+  }, [toast]);
 
   useEffect(() => {
     // Only create emergency record if it hasn't been created yet
@@ -39,7 +59,7 @@ const SOSAlert = () => {
       // Simulate alert being sent immediately
       setAlertSent(true);
 
-      // Create emergency record and simulate responders
+      // Create emergency record only once
       createEmergencyRecord("Emergency reported").then(record => {
         if (record?.id) {
           setEmergencyId(record.id);
@@ -55,39 +75,66 @@ const SOSAlert = () => {
     }
   }, [user, emergencyId, emergencyCreated]);
 
+  // Set up real-time subscription for responder updates
+  useEffect(() => {
+    if (emergencyId) {
+      const subscription = supabase
+        .channel('emergency-responses')
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'emergency_responses',
+          filter: `emergency_id=eq.${emergencyId}`
+        }, () => {
+          // Refetch responders when changes occur
+          fetchResponders();
+        })
+        .subscribe();
+        
+      return () => {
+        supabase.removeChannel(subscription);
+      };
+    }
+  }, [emergencyId]);
+
   const fetchResponders = async () => {
     if (user && emergencyId) {
       try {
         // Get emergency responses with responder profiles
-        const {
-          data,
-          error
-        } = await supabase.from('emergency_responses').select(`
+        const { data, error } = await supabase
+          .from('emergency_responses')
+          .select(`
             id, 
             status,
             responder_id
-          `).eq('emergency_id', emergencyId);
+          `)
+          .eq('emergency_id', emergencyId);
+          
         if (error) throw error;
+        
         if (data && data.length > 0) {
           // Get responder profiles for all emergency responses
           const responderIds = data.map(item => item.responder_id);
-          const {
-            data: profilesData,
-            error: profilesError
-          } = await supabase.from('profiles').select(`
+          const { data: profilesData, error: profilesError } = await supabase
+            .from('profiles')
+            .select(`
               id, 
               full_name, 
               frontline_type,
               phone
-            `).in('id', responderIds);
+            `)
+            .in('id', responderIds);
+            
           if (profilesError) throw profilesError;
+          
           if (profilesData && profilesData.length > 0) {
             // Get frontline types to map type IDs to names
-            const {
-              data: frontlineTypes,
-              error: typesError
-            } = await supabase.from('frontline_types').select('*');
+            const { data: frontlineTypes, error: typesError } = await supabase
+              .from('frontline_types')
+              .select('*');
+              
             if (typesError) throw typesError;
+            
             const typeMap = frontlineTypes ? frontlineTypes.reduce((acc: Record<string, string>, type) => {
               acc[type.id] = type.name;
               return acc;
@@ -103,52 +150,50 @@ const SOSAlert = () => {
               if (responseItem.status === "accepted") {
                 typedStatus = "accepted";
               }
+              
               return {
                 id: responseItem.id,
                 name: profile.full_name || 'Unknown Responder',
                 role: profile.frontline_type && typeMap[profile.frontline_type] ? typeMap[profile.frontline_type] : 'Healthcare Worker',
                 status: typedStatus,
-                distance: "Calculating...",
-                // This would come from a location service
                 phoneNumber: profile.phone || "+91 98765 43210"
               };
             }).filter(Boolean) as Responder[];
-            setResponders(transformedResponders);
-            return;
+            
+            if (transformedResponders.length > 0) {
+              setResponders(transformedResponders);
+              return;
+            }
           }
         }
       } catch (error) {
         console.error('Error fetching responders:', error);
       }
 
-      // Fallback to simulated data
+      // Fallback to simulated data if no actual responders found
       setResponders([{
         id: "1",
         name: "Dr. Rajesh Kumar",
         role: "Medical Officer",
         status: "accepted",
-        distance: "1.2 km",
         phoneNumber: "+91 98765 43210"
       }, {
         id: "2",
         name: "Sunita Sharma",
         role: "ASHA Worker",
         status: "accepted",
-        distance: "0.8 km",
         phoneNumber: "+91 87654 32109"
       }, {
         id: "3",
         name: "Amit Singh",
         role: "ANM",
         status: "pending",
-        distance: "2.5 km",
         phoneNumber: "+91 76543 21098"
       }, {
         id: "4",
         name: "Dr. Priya Patel",
         role: "PHC Doctor",
         status: "pending",
-        distance: "3.1 km",
         phoneNumber: "+91 65432 10987"
       }]);
     }
@@ -162,24 +207,31 @@ const SOSAlert = () => {
           id: "simulated-emergency-id"
         };
       }
-      const {
-        data,
-        error
-      } = await supabase.from('emergencies').insert({
-        patient_id: user.id,
-        description: description,
-        location: "User location",
-        // In a real app, this would be GPS coordinates
-        status: "new" as EmergencyStatus
-      }).select('id').single();
+      
+      // Create emergency record with user location
+      const { data, error } = await supabase
+        .from('emergencies')
+        .insert({
+          patient_id: user.id,
+          description: description,
+          location: userLocation ? `${userLocation.lat},${userLocation.lng}` : "Unknown location",
+          latitude: userLocation?.lat || null,
+          longitude: userLocation?.lng || null,
+          status: "new" as EmergencyStatus
+        })
+        .select('id')
+        .single();
+        
       if (error) {
         console.error("Error creating emergency record:", error);
         throw error;
       }
+      
       toast({
         title: "Emergency Created",
         description: "Your emergency has been recorded and help is on the way."
       });
+      
       return data;
     } catch (error) {
       console.error("Failed to create emergency record:", error);
@@ -191,12 +243,15 @@ const SOSAlert = () => {
     try {
       if (!emergencyId) return;
 
-      // Get nearby frontline workers
-      const {
-        data: frontlineWorkers,
-        error
-      } = await supabase.from('profiles').select('id').eq('is_frontline_worker', true).limit(5);
+      // Get all frontline workers
+      const { data: frontlineWorkers, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_frontline_worker', true)
+        .limit(10);
+        
       if (error) throw error;
+      
       if (frontlineWorkers && frontlineWorkers.length > 0) {
         // Create emergency response records for each worker
         const responseRecords = frontlineWorkers.map(worker => ({
@@ -204,14 +259,18 @@ const SOSAlert = () => {
           responder_id: worker.id,
           status: 'pending'
         }));
-        const {
-          error: insertError
-        } = await supabase.from('emergency_responses').insert(responseRecords);
+        
+        const { error: insertError } = await supabase
+          .from('emergency_responses')
+          .insert(responseRecords);
+          
         if (insertError) throw insertError;
+        
         toast({
           title: "Responders Notified",
           description: `${frontlineWorkers.length} frontline workers have been notified of your emergency.`
         });
+        
         return frontlineWorkers.length;
       } else {
         toast({
@@ -230,12 +289,15 @@ const SOSAlert = () => {
     // Update emergency status in the database
     if (user && emergencyId) {
       try {
-        const {
-          error
-        } = await supabase.from('emergencies').update({
-          status: 'cancelled' as EmergencyStatus
-        }).eq('id', emergencyId);
+        const { error } = await supabase
+          .from('emergencies')
+          .update({
+            status: 'cancelled' as EmergencyStatus
+          })
+          .eq('id', emergencyId);
+          
         if (error) throw error;
+        
         toast({
           title: "Emergency Cancelled",
           description: "Your emergency request has been cancelled."
@@ -305,7 +367,10 @@ const SOSAlert = () => {
         </div>
 
         {/* ElevenLabs Convai Widget for SOS Alert */}
-        <elevenlabs-convai agent-id="936JwZECCENUoVq4QME1"></elevenlabs-convai>
+        <div className="mb-4">
+          <elevenlabs-convai agent-id="936JwZECCENUoVq4QME1"></elevenlabs-convai>
+          <script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
+        </div>
 
         <h2 className="text-lg font-semibold mt-6 mb-3">Available Responders</h2>
 
@@ -329,7 +394,6 @@ const SOSAlert = () => {
                     )}
                   </div>
                   <p className="text-sm text-gray-500">{responder.role}</p>
-                  <p className="text-sm text-gray-500">{responder.distance} away</p>
                 </div>
                 <div className="flex items-center">
                   {responder.status === "accepted" ? (
@@ -347,14 +411,15 @@ const SOSAlert = () => {
         </div>
       </div>
       
-      {/* Fix the Cancel Emergency button to be above BottomNavBar */}
-      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t">
-        <button 
+      {/* Fix the Cancel Emergency button to be above BottomNavBar but not behind it */}
+      <div className="fixed bottom-20 left-0 right-0 p-4 bg-white border-t">
+        <Button 
           onClick={handleCancelEmergency} 
-          className="w-full bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors py-4 text-xl"
+          variant="destructive"
+          className="w-full py-3 text-base font-medium"
         >
           Cancel Emergency
-        </button>
+        </Button>
       </div>
       
       <BottomNavBar />
