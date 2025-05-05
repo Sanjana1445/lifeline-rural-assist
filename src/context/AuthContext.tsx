@@ -31,10 +31,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(currentSession?.user ?? null);
         
         // If user just signed in with OAuth, redirect to complete profile
+        // Only check for provider - don't redirect if coming from token refresh
         if (currentSession?.user?.app_metadata?.provider 
-            && currentSession.user.app_metadata.provider !== 'phone' 
             && !event.startsWith('TOKEN_')) {
-          setTimeout(() => navigate('/auth/complete-profile'), 0);
+          setTimeout(() => {
+            // Fetch profile to see if we need to collect more info
+            supabase
+              .from('profiles')
+              .select('full_name, address')
+              .eq('id', currentSession.user.id)
+              .single()
+              .then(({ data: profile }) => {
+                // Check if we need the user to complete their profile
+                if (!profile?.full_name || !profile?.address) {
+                  navigate('/auth/complete-profile');
+                } else {
+                  navigate('/');
+                }
+              });
+          }, 0);
         }
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
@@ -139,12 +154,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }) => {
     if (!user) throw new Error('No user logged in');
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(profileData)
-      .eq('id', user.id);
+    try {
+      // Check if the profile exists first
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .single();
 
-    if (error) throw error;
+      if (existingProfile) {
+        // Update existing profile
+        const { error } = await supabase
+          .from('profiles')
+          .update(profileData)
+          .eq('id', user.id);
+
+        if (error) throw error;
+      } else {
+        // Create new profile if it doesn't exist
+        const { error } = await supabase
+          .from('profiles')
+          .insert([{ id: user.id, ...profileData }]);
+
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error("Profile update error:", error);
+      throw error;
+    }
   };
 
   const logout = async () => {

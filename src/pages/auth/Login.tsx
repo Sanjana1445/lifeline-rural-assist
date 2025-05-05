@@ -106,7 +106,7 @@ const LoginPage = () => {
       <div className="max-w-md w-full mx-auto">
         <div className="flex justify-center mb-6">
           <img 
-            src="https://i.ibb.co/hM16wLH/NQJFK4B.jpg" 
+            src="/lovable-uploads/2a802fda-4533-464f-9c8c-c9c8070166cb.png" 
             alt="eRESQ Logo" 
             className="h-12" 
           />

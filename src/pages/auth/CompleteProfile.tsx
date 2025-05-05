@@ -11,7 +11,7 @@ const CompleteProfilePage = () => {
   const [fullName, setFullName] = useState('');
   const [address, setAddress] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { user, session, updateProfile } = useAuth();
+  const { user, updateProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -22,10 +22,32 @@ const CompleteProfilePage = () => {
       return;
     }
     
-    // Pre-fill name if available from OAuth provider
+    // Pre-fill name if available from OAuth provider or metadata
     if (user.user_metadata?.full_name) {
       setFullName(user.user_metadata.full_name);
     }
+
+    // Fetch existing profile data if available
+    const fetchProfile = async () => {
+      if (!user) return;
+      
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('full_name, address')
+          .eq('id', user.id)
+          .single();
+          
+        if (data) {
+          if (data.full_name) setFullName(data.full_name);
+          if (data.address) setAddress(data.address);
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+      }
+    };
+    
+    fetchProfile();
   }, [user, navigate]);
 
   const handleCompleteProfile = async (e: React.FormEvent) => {
@@ -37,16 +59,15 @@ const CompleteProfilePage = () => {
         throw new Error("Please enter your full name");
       }
 
-      // Only update fields that are provided and relevant
-      const profileData: { full_name: string; address?: string } = {
-        full_name: fullName,
-      };
-
-      if (address.trim()) {
-        profileData.address = address;
+      if (!address.trim()) {
+        throw new Error("Please enter your address");
       }
 
-      await updateProfile(profileData);
+      // Update profile with required fields
+      await updateProfile({
+        full_name: fullName,
+        address: address
+      });
 
       toast({
         title: "Profile Updated",

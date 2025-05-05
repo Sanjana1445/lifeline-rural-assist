@@ -6,7 +6,7 @@ const Header = () => {
     <div className="bg-eresq-navy text-white p-4 flex items-center justify-between">
       <div className="flex items-center">
         <img 
-          src="https://i.ibb.co/hM16wLH/NQJFK4B.jpg" 
+          src="/lovable-uploads/2a802fda-4533-464f-9c8c-c9c8070166cb.png" 
           alt="eRESQ Logo" 
           className="h-6 mr-2" 
         />
