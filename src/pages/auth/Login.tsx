@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { Phone, Loader2, Mail } from "lucide-react";
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Phone, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 const LoginPage = () => {
@@ -16,6 +16,24 @@ const LoginPage = () => {
   const { signInWithOtp, user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  // Check for error parameters in URL
+  useEffect(() => {
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+    
+    if (error) {
+      toast({
+        title: "Authentication Error",
+        description: errorDescription || "There was an error during authentication. Please try again.",
+        variant: "destructive"
+      });
+      
+      // Clear error from URL
+      navigate('/auth/login', { replace: true });
+    }
+  }, [searchParams, toast, navigate]);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -86,6 +104,13 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
       <div className="max-w-md w-full mx-auto">
+        <div className="flex justify-center mb-6">
+          <img 
+            src="https://i.ibb.co/hM16wLH/NQJFK4B.jpg" 
+            alt="eRESQ Logo" 
+            className="h-12" 
+          />
+        </div>
         <h1 className="text-2xl font-bold mb-6 text-center text-eresq-navy">Welcome to eRESQ</h1>
         <p className="text-center text-gray-600 mb-6">
           Sign in or register to access emergency services and resources

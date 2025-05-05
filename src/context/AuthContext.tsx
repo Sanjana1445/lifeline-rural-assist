@@ -25,8 +25,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // First set up the auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
+      // Handle auth events
+      if (event === 'SIGNED_IN') {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        
+        // If user just signed in with OAuth, redirect to complete profile
+        if (currentSession?.user?.app_metadata?.provider 
+            && currentSession.user.app_metadata.provider !== 'phone' 
+            && !event.startsWith('TOKEN_')) {
+          setTimeout(() => navigate('/auth/complete-profile'), 0);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
+      } else {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+      }
     });
     
     // Then check for existing session
@@ -39,7 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   const signInWithOtp = async (phoneOrEmail: string | { email: string }) => {
     setLoading(true);
@@ -101,7 +117,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         throw response.error;
       }
       
-      // If verification is successful and we have a new user, let's navigate to complete profile
+      // If verification is successful, navigate to complete profile
       if (response.data.user) {
         navigate('/auth/complete-profile');
       } else {

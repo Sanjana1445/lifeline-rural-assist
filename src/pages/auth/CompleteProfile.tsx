@@ -10,9 +10,8 @@ import { Loader2 } from "lucide-react";
 const CompleteProfilePage = () => {
   const [fullName, setFullName] = useState('');
   const [address, setAddress] = useState('');
-  const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { user, updateProfile } = useAuth();
+  const { user, session, updateProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -20,6 +19,12 @@ const CompleteProfilePage = () => {
     // If user is not authenticated, redirect to login
     if (!user) {
       navigate('/auth/login');
+      return;
+    }
+    
+    // Pre-fill name if available from OAuth provider
+    if (user.user_metadata?.full_name) {
+      setFullName(user.user_metadata.full_name);
     }
   }, [user, navigate]);
 
@@ -28,11 +33,20 @@ const CompleteProfilePage = () => {
     setIsLoading(true);
 
     try {
-      await updateProfile({
+      if (!fullName.trim()) {
+        throw new Error("Please enter your full name");
+      }
+
+      // Only update fields that are provided and relevant
+      const profileData: { full_name: string; address?: string } = {
         full_name: fullName,
-        address,
-        email: email || undefined
-      });
+      };
+
+      if (address.trim()) {
+        profileData.address = address;
+      }
+
+      await updateProfile(profileData);
 
       toast({
         title: "Profile Updated",
@@ -81,17 +95,6 @@ const CompleteProfilePage = () => {
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               required 
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>
-            <Input 
-              id="email"
-              type="email" 
-              placeholder="Email (Optional)" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           

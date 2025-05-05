@@ -105,35 +105,44 @@ export type Database = {
         Row: {
           address: string | null
           certification_details: Json | null
+          created_at: string | null
           email: string | null
           frontline_type: number | null
           full_name: string | null
           id: string
           is_frontline_worker: boolean | null
-          phone: string
+          phone: string | null
+          raw_user_meta_data: Json | null
           updated_at: string | null
+          user_role: string | null
         }
         Insert: {
           address?: string | null
           certification_details?: Json | null
+          created_at?: string | null
           email?: string | null
           frontline_type?: number | null
           full_name?: string | null
           id: string
           is_frontline_worker?: boolean | null
-          phone: string
+          phone?: string | null
+          raw_user_meta_data?: Json | null
           updated_at?: string | null
+          user_role?: string | null
         }
         Update: {
           address?: string | null
           certification_details?: Json | null
+          created_at?: string | null
           email?: string | null
           frontline_type?: number | null
           full_name?: string | null
           id?: string
           is_frontline_worker?: boolean | null
-          phone?: string
+          phone?: string | null
+          raw_user_meta_data?: Json | null
           updated_at?: string | null
+          user_role?: string | null
         }
         Relationships: [
           {
