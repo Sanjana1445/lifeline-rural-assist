@@ -186,7 +186,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               ...profileData
             });
             
-          if (error) throw error;
+          if (error) {
+            console.error("Profile creation error details:", error);
+            throw error;
+          }
           
           // Clear the temporary email
           sessionStorage.removeItem('tempEmail');

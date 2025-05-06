@@ -1,4 +1,3 @@
-
 import { useState, useRef } from "react";
 import { ArrowLeft, Upload, Camera, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -161,6 +160,7 @@ const Triage = () => {
     setAnalysisResult(null);
 
     try {
+      console.log("Sending image for analysis...");
       const response = await fetch(`${window.location.origin}/functions/v1/analyze-image`, {
         method: 'POST',
         headers: {
@@ -171,7 +171,27 @@ const Triage = () => {
         })
       });
 
-      const data = await response.json();
+      console.log("Response status:", response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("API error response:", errorText);
+        throw new Error(`API error (${response.status}): ${errorText}`);
+      }
+      
+      // Get the response as text first for debugging
+      const responseText = await response.text();
+      console.log("Raw response:", responseText.substring(0, 200) + "...");
+      
+      // Parse as JSON
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse response:", parseError);
+        console.error("Response that failed to parse:", responseText.substring(0, 500));
+        throw new Error("Invalid JSON response from server");
+      }
 
       if (data.error) {
         throw new Error(data.error);

@@ -34,49 +34,78 @@ serve(async (req) => {
       }
     }
     
-    // Configure Gemini API request
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: "Analyze this medical image and provide an assessment. Identify any visible injuries, conditions, or medical emergencies. Then provide a clear explanation of what should be done as first aid steps or immediate actions. Format your response with two sections: 1) What you observe (the potential medical issue), and 2) First aid recommendations and when to seek professional help."
-              },
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: base64Data
+    console.log("Making Gemini API request with image...");
+    
+    // Configure Gemini API request with proper error handling
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: "Analyze this medical image and provide an assessment. Identify any visible injuries, conditions, or medical emergencies. Then provide a clear explanation of what should be done as first aid steps or immediate actions. Format your response with two sections: 1) What you observe (the potential medical issue), and 2) First aid recommendations and when to seek professional help."
+                },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64Data
+                  }
                 }
-              }
-            ]
+              ]
+            }
+          ],
+          generation_config: {
+            temperature: 0.2,
+            top_p: 0.8,
+            top_k: 40
           }
-        ],
-        generation_config: {
-          temperature: 0.2,
-          top_p: 0.8,
-          top_k: 40
-        }
-      })
-    });
-    
-    const data = await response.json();
-    let analysisResult = "Could not analyze the image.";
-    
-    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-      analysisResult = data.candidates[0].content.parts[0].text;
-    } else if (data.error) {
-      throw new Error(`Gemini API error: ${data.error.message || JSON.stringify(data.error)}`);
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Gemini API error response:", errorText);
+        throw new Error(`Gemini API returned status ${response.status}: ${errorText}`);
+      }
+      
+      const responseText = await response.text();
+      console.log("Gemini API raw response:", responseText.substring(0, 200) + "...");
+      
+      // Safely parse the JSON response
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse Gemini API response:", parseError);
+        console.error("Response that failed to parse:", responseText.substring(0, 500));
+        throw new Error("Invalid JSON response from Gemini API");
+      }
+      
+      let analysisResult = "Could not analyze the image.";
+      
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        analysisResult = data.candidates[0].content.parts[0].text;
+      } else if (data.error) {
+        console.error("Structured error from Gemini API:", data.error);
+        throw new Error(`Gemini API error: ${data.error.message || JSON.stringify(data.error)}`);
+      } else {
+        console.error("Unexpected Gemini API response structure:", JSON.stringify(data, null, 2).substring(0, 500));
+        throw new Error("Unexpected response format from Gemini API");
+      }
+      
+      return new Response(
+        JSON.stringify({ analysis: analysisResult }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } catch (geminiError) {
+      console.error("Error during Gemini API call:", geminiError);
+      throw new Error(`Failed to process image with Gemini API: ${geminiError.message}`);
     }
-    
-    return new Response(
-      JSON.stringify({ analysis: analysisResult }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
     
   } catch (error) {
     console.error('Error analyzing image:', error);

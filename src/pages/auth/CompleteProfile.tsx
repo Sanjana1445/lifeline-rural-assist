@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -82,6 +81,8 @@ const CompleteProfilePage = () => {
         throw new Error("Please enter your address");
       }
 
+      console.log("Updating profile with data:", { full_name: fullName, address: address, email: tempEmail || undefined });
+      
       // Update profile with required fields
       await updateProfile({
         full_name: fullName,
@@ -96,9 +97,21 @@ const CompleteProfilePage = () => {
 
       navigate('/');
     } catch (error) {
+      console.error("Profile update error:", error);
+      
+      let errorMessage = "An unknown error occurred";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      // If it's a Supabase error object
+      if (typeof error === 'object' && error !== null && 'message' in error) {
+        errorMessage = (error as { message: string }).message;
+      }
+      
       toast({
         title: "Error Updating Profile",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
