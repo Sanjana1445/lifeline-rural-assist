@@ -7,6 +7,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 
 const Triage = () => {
   const [cameraActive, setCameraActive] = useState(false);
@@ -242,6 +243,22 @@ const Triage = () => {
           </Link>
           <h1 className="text-xl font-bold">Triage & Symptom Checker</h1>
         </div>
+
+        {/* ElevenLabs Conversational AI */}
+        <Card className="mb-4 p-4 bg-white shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-semibold">AI Assistant</h2>
+            <div className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+              ElevenLabs AI
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Talk to our AI assistant for immediate guidance and symptom analysis.
+          </p>
+          <div className="bg-gray-50 rounded-lg p-2 min-h-[100px] relative">
+            <elevenlabs-convai agent-id="nFz0xaoFO5o5kXiDSzda"></elevenlabs-convai>
+          </div>
+        </Card>
 
         <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
           <p className="text-gray-600 mb-4">

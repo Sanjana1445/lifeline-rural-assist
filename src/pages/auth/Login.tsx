@@ -6,8 +6,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, Loader2 } from "lucide-react";
+import { Mail, Loader2, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Link } from 'react-router-dom';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -112,9 +113,69 @@ const LoginPage = () => {
     }
   };
 
+  const handleSkipLogin = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Generate random email to avoid conflicts
+      const randomEmail = `guest_${Math.random().toString(36).substring(2, 10)}@example.com`;
+      
+      // Attempt to create a guest profile
+      await directEmailLogin(randomEmail);
+      
+      // Create dummy profile data in Supabase
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: (await supabase.auth.getUser()).data.user?.id,
+          email: randomEmail,
+          full_name: 'Guest User',
+          address: '123 Example St, Anytown, USA',
+          created_at: new Date().toISOString()
+        });
+        
+      if (profileError) {
+        console.error('Error creating guest profile:', profileError);
+      }
+      
+      // Set authenticated flag in localStorage
+      localStorage.setItem('authenticated', 'true');
+      
+      toast({
+        title: "Guest Access Granted",
+        description: "You are now browsing as a guest user"
+      });
+      
+      // Redirect to home page
+      navigate('/');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create guest account. Please try again.",
+        variant: "destructive"
+      });
+      console.error('Skip login error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col justify-center p-6 bg-gray-50">
       <div className="max-w-md w-full mx-auto">
+        {/* Skip button */}
+        <div className="flex justify-end mb-4">
+          <Button 
+            variant="ghost" 
+            onClick={handleSkipLogin} 
+            disabled={isLoading}
+            className="text-gray-500 hover:text-gray-800 flex items-center gap-1"
+          >
+            Skip
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
+        
         <div className="flex justify-center mb-6">
           <h1 className="text-2xl font-bold text-eresq-navy">eRESQ</h1>
         </div>
