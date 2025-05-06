@@ -174,13 +174,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const tempEmail = sessionStorage.getItem('tempEmail');
       if (tempEmail) {
         try {
-          // Create profile entry
+          // Generate a unique ID for the profile
+          const randomId = crypto.randomUUID();
+          
+          // Create profile entry with the generated ID
           const { error } = await supabase
             .from('profiles')
-            .insert([{ 
+            .insert({
+              id: randomId,
               email: tempEmail,
-              ...profileData 
-            }]);
+              ...profileData
+            });
             
           if (error) throw error;
           
