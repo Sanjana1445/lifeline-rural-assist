@@ -109,6 +109,7 @@ export type Database = {
           email: string | null
           frontline_type: number | null
           full_name: string | null
+          gmail: string | null
           id: string
           is_frontline_worker: boolean | null
           phone: string | null
@@ -123,6 +124,7 @@ export type Database = {
           email?: string | null
           frontline_type?: number | null
           full_name?: string | null
+          gmail?: string | null
           id: string
           is_frontline_worker?: boolean | null
           phone?: string | null
@@ -137,6 +139,7 @@ export type Database = {
           email?: string | null
           frontline_type?: number | null
           full_name?: string | null
+          gmail?: string | null
           id?: string
           is_frontline_worker?: boolean | null
           phone?: string | null
