@@ -12,6 +12,7 @@ interface AuthContextType {
   verifyOtp: (phoneOrEmail: string | { email: string; token: string; type: 'email' }, token?: string) => Promise<any>;
   updateProfile: (profileData: { full_name?: string; address?: string; email?: string }) => Promise<void>;
   logout: () => Promise<void>;
+  directEmailLogin: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,6 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
+        localStorage.removeItem('authenticated');
       } else {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
@@ -71,6 +73,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       subscription.unsubscribe();
     };
   }, [navigate]);
+
+  // Direct email login without verification
+  const directEmailLogin = async (email: string) => {
+    try {
+      // Instead of actual authentication, we're using a simplified approach
+      // Store the email in session storage to pass to the profile completion page
+      sessionStorage.setItem('tempEmail', email);
+      localStorage.setItem('authenticated', 'true');
+      
+      return Promise.resolve();
+    } catch (error) {
+      console.error("Error in direct email login:", error);
+      throw error;
+    }
+  };
 
   const signInWithOtp = async (phoneOrEmail: string | { email: string }) => {
     setLoading(true);
@@ -152,7 +169,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     address?: string;
     email?: string;
   }) => {
-    if (!user) throw new Error('No user logged in');
+    if (!user) {
+      // For direct email login, handle profile creation
+      const tempEmail = sessionStorage.getItem('tempEmail');
+      if (tempEmail) {
+        try {
+          // Create profile entry
+          const { error } = await supabase
+            .from('profiles')
+            .insert([{ 
+              email: tempEmail,
+              ...profileData 
+            }]);
+            
+          if (error) throw error;
+          
+          // Clear the temporary email
+          sessionStorage.removeItem('tempEmail');
+          return;
+        } catch (error) {
+          console.error("Profile creation error:", error);
+          throw error;
+        }
+      } else {
+        throw new Error('No user logged in and no temporary email found');
+      }
+    }
 
     try {
       // Check if the profile exists first
@@ -185,6 +227,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
+    localStorage.removeItem('authenticated');
+    sessionStorage.removeItem('tempEmail');
     await supabase.auth.signOut();
     navigate('/auth/login');
   };
@@ -198,7 +242,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         signInWithOtp,
         verifyOtp,
         updateProfile,
-        logout
+        logout,
+        directEmailLogin
       }}
     >
       {children}

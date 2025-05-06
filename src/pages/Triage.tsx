@@ -1,5 +1,6 @@
+
 import { useState, useRef } from "react";
-import { ArrowLeft, Upload, Camera } from "lucide-react";
+import { ArrowLeft, Upload, Camera, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
@@ -10,11 +11,12 @@ const Triage = () => {
   const [cameraActive, setCameraActive] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
+
   const startCamera = async () => {
     try {
       // Reset any previous camera errors
@@ -85,6 +87,7 @@ const Triage = () => {
       });
     }
   };
+
   const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
@@ -93,6 +96,7 @@ const Triage = () => {
       setCameraActive(false);
     }
   };
+
   const captureImage = () => {
     if (canvasRef.current && videoRef.current) {
       const context = canvasRef.current.getContext('2d');
@@ -112,7 +116,7 @@ const Triage = () => {
           stopCamera();
           toast({
             title: "Image captured",
-            description: "Image captured successfully. You can now use the AI assistant below."
+            description: "Image captured successfully. You can now analyze the image."
           });
         } catch (e) {
           console.error('Error capturing image:', e);
@@ -125,6 +129,7 @@ const Triage = () => {
       }
     }
   };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -134,13 +139,66 @@ const Triage = () => {
           setSelectedImage(event.target.result as string);
           toast({
             title: "Image Uploaded",
-            description: "Image uploaded successfully. You can now use the AI assistant below."
+            description: "Image uploaded successfully. You can now analyze the image."
           });
         }
       };
       reader.readAsDataURL(file);
     }
   };
+
+  const analyzeImage = async () => {
+    if (!selectedImage) {
+      toast({
+        title: "No Image Selected",
+        description: "Please capture or upload an image first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+
+    try {
+      const response = await fetch(`${window.location.origin}/functions/v1/analyze-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          imageBase64: selectedImage
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setAnalysisResult(data.analysis);
+      toast({
+        title: "Analysis Complete",
+        description: "Image has been analyzed successfully."
+      });
+    } catch (error) {
+      console.error('Error analyzing image:', error);
+      toast({
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Failed to analyze the image. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const resetAnalysis = () => {
+    setSelectedImage(null);
+    setAnalysisResult(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -154,7 +212,7 @@ const Triage = () => {
 
         <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
           <p className="text-gray-600 mb-4">
-            Take a photo or upload an image of your symptoms for AI analysis. Then use the voice assistant below to get help.
+            Take a photo or upload an image of your symptoms for AI analysis.
           </p>
 
           {/* Camera View */}
@@ -176,7 +234,7 @@ const Triage = () => {
               {selectedImage ? (
                 <div className="relative">
                   <img src={selectedImage} alt="Uploaded" className="w-full h-64 object-contain rounded-lg" />
-                  <button onClick={() => setSelectedImage(null)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full">
+                  <button onClick={resetAnalysis} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full">
                     <ArrowLeft size={16} className="transform rotate-45" />
                   </button>
                 </div>
@@ -201,22 +259,45 @@ const Triage = () => {
               )}
 
               {/* Upload Option */}
-              <label className="mt-2 block text-center">
-                <div className="inline-flex items-center text-sm text-gray-500 cursor-pointer hover:text-gray-700">
-                  <Upload size={16} className="mr-1" /> Upload image instead
-                </div>
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-              </label>
+              {!selectedImage && (
+                <label className="mt-2 block text-center">
+                  <div className="inline-flex items-center text-sm text-gray-500 cursor-pointer hover:text-gray-700">
+                    <Upload size={16} className="mr-1" /> Upload image instead
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                </label>
+              )}
+            </div>
+          )}
+
+          {/* Analysis Actions */}
+          {selectedImage && !isAnalyzing && !analysisResult && (
+            <Button 
+              onClick={analyzeImage} 
+              className="w-full mt-2"
+            >
+              Analyze Image
+            </Button>
+          )}
+
+          {/* Loading State */}
+          {isAnalyzing && (
+            <div className="flex flex-col items-center justify-center p-4">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-2" />
+              <p className="text-gray-600">Analyzing image...</p>
+            </div>
+          )}
+
+          {/* Analysis Results */}
+          {analysisResult && (
+            <div className="mt-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
+              <h3 className="font-bold text-lg mb-2">Analysis Results</h3>
+              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
+                {analysisResult}
+              </div>
             </div>
           )}
         </div>
-
-        {/* ElevenLabs Convai Widget for Triage */}
-        <div className="mb-4">
-          <elevenlabs-convai agent-id="1uK31fvCa73MForJM5BX"></elevenlabs-convai>
-          <script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
-        </div>
-        
       </div>
       
       <BottomNavBar />

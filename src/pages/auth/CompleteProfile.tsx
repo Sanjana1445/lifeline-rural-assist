@@ -6,42 +6,60 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client"; // Added missing import
+import { supabase } from "@/integrations/supabase/client";
 
 const CompleteProfilePage = () => {
   const [fullName, setFullName] = useState('');
   const [address, setAddress] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [tempEmail, setTempEmail] = useState<string | null>(null);
   const { user, updateProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // If user is not authenticated, redirect to login
-    if (!user) {
+    // Check for temporary email from direct email login
+    const storedTempEmail = sessionStorage.getItem('tempEmail');
+    if (storedTempEmail) {
+      setTempEmail(storedTempEmail);
+    } else if (!user && !localStorage.getItem('authenticated')) {
+      // If no user and no temp email, redirect to login
       navigate('/auth/login');
       return;
     }
     
     // Pre-fill name if available from OAuth provider or metadata
-    if (user.user_metadata?.full_name) {
+    if (user?.user_metadata?.full_name) {
       setFullName(user.user_metadata.full_name);
     }
 
     // Fetch existing profile data if available
     const fetchProfile = async () => {
-      if (!user) return;
+      if (!user && !storedTempEmail) return;
       
       try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name, address')
-          .eq('id', user.id)
-          .single();
+        let query;
+        
+        if (user) {
+          query = supabase
+            .from('profiles')
+            .select('full_name, address')
+            .eq('id', user.id)
+            .single();
+        } else if (storedTempEmail) {
+          query = supabase
+            .from('profiles')
+            .select('full_name, address')
+            .eq('email', storedTempEmail)
+            .single();
+        }
           
-        if (data) {
-          if (data.full_name) setFullName(data.full_name);
-          if (data.address) setAddress(data.address);
+        if (query) {
+          const { data } = await query;
+          if (data) {
+            if (data.full_name) setFullName(data.full_name);
+            if (data.address) setAddress(data.address);
+          }
         }
       } catch (error) {
         console.error("Error fetching profile:", error);
@@ -67,7 +85,8 @@ const CompleteProfilePage = () => {
       // Update profile with required fields
       await updateProfile({
         full_name: fullName,
-        address: address
+        address: address,
+        email: tempEmail || undefined
       });
 
       toast({
