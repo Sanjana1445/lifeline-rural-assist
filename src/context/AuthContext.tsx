@@ -176,19 +176,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           // Generate a unique ID for the profile
           const randomId = crypto.randomUUID();
+          console.log("Creating profile with generated ID:", randomId);
           
-          // Create profile entry with the generated ID
-          const { error } = await supabase
+          // First check if a profile with this email already exists
+          const { data: existingProfile } = await supabase
             .from('profiles')
-            .insert({
-              id: randomId,
-              email: tempEmail,
-              ...profileData
-            });
+            .select('id')
+            .eq('email', tempEmail)
+            .maybeSingle();
             
-          if (error) {
-            console.error("Profile creation error details:", error);
-            throw error;
+          if (existingProfile) {
+            console.log("Profile already exists with this email, updating instead:", existingProfile.id);
+            
+            // Update existing profile
+            const { error } = await supabase
+              .from('profiles')
+              .update(profileData)
+              .eq('id', existingProfile.id);
+              
+            if (error) {
+              console.error("Profile update error details:", error);
+              throw error;
+            }
+          } else {
+            console.log("Creating new profile with email:", tempEmail);
+            
+            // Create profile entry with the generated ID and email
+            const { error } = await supabase
+              .from('profiles')
+              .insert({
+                id: randomId,
+                email: tempEmail,
+                ...profileData
+              });
+              
+            if (error) {
+              console.error("Profile creation error details:", error);
+              throw error;
+            }
           }
           
           // Clear the temporary email
@@ -209,7 +234,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .from('profiles')
         .select('id')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       if (existingProfile) {
         // Update existing profile

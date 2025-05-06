@@ -1,10 +1,12 @@
+
 import { useState, useRef } from "react";
-import { ArrowLeft, Upload, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, Camera, Loader2, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import BottomNavBar from "../components/BottomNavBar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const Triage = () => {
   const [cameraActive, setCameraActive] = useState(false);
@@ -12,6 +14,7 @@ const Triage = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
@@ -158,10 +161,17 @@ const Triage = () => {
 
     setIsAnalyzing(true);
     setAnalysisResult(null);
+    setAnalysisError(null);
 
     try {
       console.log("Sending image for analysis...");
-      const response = await fetch(`${window.location.origin}/functions/v1/analyze-image`, {
+      
+      // Get the current origin with protocol
+      const baseUrl = window.location.origin;
+      const functionUrl = `${baseUrl}/functions/v1/analyze-image`;
+      console.log("Using function URL:", functionUrl);
+      
+      const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -204,9 +214,11 @@ const Triage = () => {
       });
     } catch (error) {
       console.error('Error analyzing image:', error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to analyze the image. Please try again.";
+      setAnalysisError(errorMessage);
       toast({
         title: "Analysis Failed",
-        description: error instanceof Error ? error.message : "Failed to analyze the image. Please try again.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -217,6 +229,7 @@ const Triage = () => {
   const resetAnalysis = () => {
     setSelectedImage(null);
     setAnalysisResult(null);
+    setAnalysisError(null);
   };
 
   return (
@@ -288,6 +301,20 @@ const Triage = () => {
                 </label>
               )}
             </div>
+          )}
+
+          {/* Analysis Error Alert */}
+          {analysisError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Analysis Failed</AlertTitle>
+              <AlertDescription>
+                {analysisError}
+                <div className="mt-2 text-sm">
+                  You can try uploading a different image or try again later.
+                </div>
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Analysis Actions */}

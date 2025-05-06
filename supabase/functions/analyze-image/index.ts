@@ -13,8 +13,20 @@ serve(async (req) => {
   }
 
   try {
-    const GEMINI_API_KEY = "AIzaSyAYrqaXVYsj3LZP26PocWYAG9ewDRxOB5w";
-    const { imageBase64 } = await req.json();
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "AIzaSyAYrqaXVYsj3LZP26PocWYAG9ewDRxOB5w";
+    const requestUrl = new URL(req.url);
+    console.log("Function URL:", requestUrl.toString());
+    
+    // Parse request body
+    let imageBase64;
+    try {
+      const requestData = await req.json();
+      imageBase64 = requestData.imageBase64;
+      console.log("Received request with image data length:", imageBase64 ? imageBase64.length : 0);
+    } catch (parseError) {
+      console.error("Error parsing request JSON:", parseError);
+      throw new Error("Invalid request format: Could not parse JSON");
+    }
     
     if (!imageBase64) {
       throw new Error("No image provided");
@@ -34,11 +46,18 @@ serve(async (req) => {
       }
     }
     
-    console.log("Making Gemini API request with image...");
+    console.log("Making Gemini API request with image...", {
+      mimeType, 
+      imageDataLength: base64Data.length
+    });
     
     // Configure Gemini API request with proper error handling
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_API_KEY}`, {
+      // Using the appropriate Gemini API URL for vision processing
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_API_KEY}`;
+      console.log("Using Gemini API URL:", geminiUrl);
+      
+      const response = await fetch(geminiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
